@@ -10,7 +10,8 @@ APP_BIN="$APP_DIR/lark-cli"
 WRAPPER="$PREFIX/bin/lark-memory-cli"
 DISABLED_BIN_DIR="$PREFIX/bin/.disabled"
 DISABLED_WRAPPER="$DISABLED_BIN_DIR/lark-memory-cli"
-MANAGED_SKILLS=("lark-memory" "graph-search")
+MANAGED_SKILLS_FILE="$SOURCE_DIR/skills/memory-managed-skills.txt"
+MANAGED_SKILLS=()
 SHARED_SKILL="lark-shared"
 SKILL_LABELS=("agents" "codex")
 SKILL_ROOTS=("$HOME/.agents/skills" "$HOME/.codex/skills")
@@ -21,6 +22,7 @@ usage() {
 Usage:
   memoryctl status [--json]
   memoryctl enable [--json]
+  memoryctl refresh [--json]
   memoryctl disable [--json] [--skills-only]
 
 Environment:
@@ -33,6 +35,33 @@ fail() {
   printf 'memoryctl: %s\n' "$*" >&2
   exit 1
 }
+
+load_managed_skills() {
+  [[ -f "$MANAGED_SKILLS_FILE" ]] || fail "managed skills manifest not found: $MANAGED_SKILLS_FILE"
+  local raw skill
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    skill="${raw%%#*}"
+    skill="${skill#"${skill%%[![:space:]]*}"}"
+    skill="${skill%"${skill##*[![:space:]]}"}"
+    [[ -z "$skill" ]] && continue
+    [[ "$skill" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "invalid managed skill name: $skill"
+    local existing
+    for existing in "${MANAGED_SKILLS[@]:-}"; do
+      [[ "$existing" != "$skill" ]] || fail "duplicate managed skill name: $skill"
+    done
+    [[ -d "$SOURCE_DIR/skills/$skill" ]] || fail "managed skill source not found: $SOURCE_DIR/skills/$skill"
+    MANAGED_SKILLS+=("$skill")
+  done < "$MANAGED_SKILLS_FILE"
+  [[ ${#MANAGED_SKILLS[@]} -gt 0 ]] || fail "managed skills manifest is empty: $MANAGED_SKILLS_FILE"
+  local found_primary=false
+  local existing
+  for existing in "${MANAGED_SKILLS[@]}"; do
+    [[ "$existing" != "lark-memory" ]] || found_primary=true
+  done
+  [[ "$found_primary" == true ]] || fail "managed skills manifest must include lark-memory"
+}
+
+load_managed_skills
 
 json_escape() {
   local s="${1:-}"
@@ -121,6 +150,24 @@ disable_wrapper() {
   esac
 }
 
+refresh_wrapper() {
+  local state
+  state="$(path_state "$WRAPPER" "$DISABLED_WRAPPER")"
+  case "$state" in
+    active)
+      write_wrapper "$WRAPPER"
+      ;;
+    disabled)
+      write_wrapper "$DISABLED_WRAPPER"
+      ;;
+    missing)
+      ;;
+    conflict)
+      fail "wrapper exists in both active and disabled locations: $WRAPPER and $DISABLED_WRAPPER"
+      ;;
+  esac
+}
+
 ensure_shared_skill() {
   local root="$1"
   local active="$root/$SHARED_SKILL"
@@ -191,6 +238,48 @@ disable_skill_root() {
   for skill in "${MANAGED_SKILLS[@]}"; do
     disable_named_skill_root "$root" "$skill"
   done
+}
+
+refresh_named_skill_root() {
+  local root="$1"
+  local skill="$2"
+  local primary_state="$3"
+  local active="$root/$skill"
+  local disabled="$root/.disabled/$skill"
+  local src="$SOURCE_DIR/skills/$skill"
+  local state target
+  state="$(path_state "$active" "$disabled")"
+  case "$state" in
+    active)
+      target="$active"
+      ;;
+    disabled)
+      target="$disabled"
+      ;;
+    missing)
+      if [[ "$primary_state" == "disabled" ]]; then
+        target="$disabled"
+      else
+        target="$active"
+      fi
+      ;;
+    conflict)
+      fail "skill exists in both active and disabled locations: $active and $disabled"
+      ;;
+  esac
+  copy_dir_atomic "$src" "$target"
+}
+
+refresh_skill_root() {
+  local root="$1"
+  local primary_state
+  primary_state="$(path_state "$root/lark-memory" "$root/.disabled/lark-memory")"
+  [[ "$primary_state" != "conflict" ]] || fail "lark-memory exists in both active and disabled locations under $root"
+  local skill
+  for skill in "${MANAGED_SKILLS[@]}"; do
+    refresh_named_skill_root "$root" "$skill" "$primary_state"
+  done
+  ensure_shared_skill "$root"
 }
 
 source_branch() {
@@ -380,6 +469,13 @@ case "$cmd" in
     enable_wrapper
     for root in "${SKILL_ROOTS[@]}"; do
       enable_skill_root "$root"
+    done
+    print_status
+    ;;
+  refresh)
+    refresh_wrapper
+    for root in "${SKILL_ROOTS[@]}"; do
+      refresh_skill_root "$root"
     done
     print_status
     ;;

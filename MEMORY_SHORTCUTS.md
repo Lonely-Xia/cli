@@ -41,17 +41,7 @@ else
   git clone -b "$branch" "$repo" "$dir"
 fi
 
-if [ -n "${GO_BIN:-}" ]; then
-  go_bin="$GO_BIN"
-elif [ -x /opt/homebrew/opt/go/libexec/bin/go ]; then
-  go_bin=/opt/homebrew/opt/go/libexec/bin/go
-elif [ -x /usr/local/opt/go/libexec/bin/go ]; then
-  go_bin=/usr/local/opt/go/libexec/bin/go
-elif [ -x /usr/local/bytesuite-box/pkg/go/1.24.1/bin/go ]; then
-  go_bin=/usr/local/bytesuite-box/pkg/go/1.24.1/bin/go
-else
-  go_bin="$(command -v go)"
-fi
+go_bin="$(GO_BIN="${GO_BIN:-}" bash "$dir/scripts/memory-upgrade.sh" --print-go)"
 
 unset GOROOT
 export GOTOOLCHAIN=local
@@ -86,16 +76,16 @@ lark-memory-cli --version
 - 自动选择一个可用的 Go 1.23+，并清理旧 `GOROOT` 对构建的影响。
 - 直接执行 `go build`，实际二进制默认放到 `$HOME/.local/libexec/lark-memory-cli/lark-cli`。
 - 安装 `$HOME/.lark-cli-memory/bin/memoryctl`，并用它生成 `$HOME/.local/bin/lark-memory-cli` wrapper。
-- 同步 `lark-memory` skill 到 `$HOME/.agents/skills/lark-memory` 和
-  `$HOME/.codex/skills/lark-memory`。
+- 同步总路由 `lark-memory` 和五个命令选择器：`memory-list`、`memory-get`、
+  `memory-graph-query`、`memory-graph-one-hop`、`memory-graph-search`。
 - 如果目标 skill root 下还没有 `lark-shared`，会同步一份 `lark-shared` 作为
   `lark-memory` 的依赖。
 - 向 `~/.zshrc` 写入 `$HOME/.local/bin` 到 `PATH`。
 - 不改写已有 `lark-cli`，也不向 shell 写入 OpenAPI 域名覆盖。
 
 注意：Codex/Agent 的 skill 列表通常在会话启动时加载。安装后命令可以立即使用；
-如果希望 `lark-memory` 出现在当前工具的 skill 列表里，请重启或新开一个 Codex/Agent
-会话。
+如果希望新的 `memory-*` 入口出现在当前工具的 skill 列表里，请重启或新开一个
+Codex/Agent 会话。
 
 安装完成后，重新打开一个终端，或直接执行：
 
@@ -133,7 +123,7 @@ $HOME/.lark-cli-memory/bin/memoryctl status
 # 查看状态，JSON 适合脚本或 Agent 读取
 $HOME/.lark-cli-memory/bin/memoryctl status --json
 
-# 启用 wrapper 和 lark-memory skill
+# 启用 wrapper 和所有受管 Memory skills
 $HOME/.lark-cli-memory/bin/memoryctl enable
 
 # 停用 wrapper 和 skill，保留源码、二进制、登录态和配置
@@ -145,11 +135,11 @@ $HOME/.lark-cli-memory/bin/memoryctl disable --skills-only
 
 状态含义：
 
-- `enabled`：`lark-memory-cli` wrapper 在 `$HOME/.local/bin`，`lark-memory`
-  skill 在 Codex/Agent 可扫描目录。
-- `disabled`：wrapper 和 `lark-memory` skill 都被移到 `.disabled` 目录，Agent
+- `enabled`：`lark-memory-cli` wrapper 在 `$HOME/.local/bin`，所有受管 Memory skills
+  在 Codex/Agent 可扫描目录。
+- `disabled`：wrapper 和所有受管 Memory skills 都被移到 `.disabled` 目录，Agent
   不会主动看到 Memory CLI。
-- `skills_disabled`：wrapper 仍可用，但 `lark-memory` skill 已隐藏，适合人工保留命令
+- `skills_disabled`：wrapper 仍可用，但受管 Memory skills 已隐藏，适合人工保留命令
   但不让 Agent 自动发现能力。
 - `partial`：active 和 `.disabled` 目录同时存在，或只有一部分 skill root 被切换，
   需要人工检查。
@@ -158,7 +148,16 @@ Codex/Agent 通常只在会话启动时扫描 skill，切换后请重启或新�
 
 ## 升级
 
-安装完成后，后续升级可以直接执行：
+从不包含五个 `memory-*` 命令选择器的旧版本升级时，使用下面的一次性兼容命令。它会自动寻找
+Go 1.23+、升级二进制，再用刚拉取的 `memoryctl refresh` 补齐所有受管 skills，同时保留当前
+启用或停用状态：
+
+```bash
+bash -lc 'set -o pipefail; curl --proto "=https" --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/arnold9672/cli/jhn_memory/scripts/memory-upgrade.sh | bash'
+```
+
+完成这次迁移后，后续日常升级可以继续直接执行：
 
 ```bash
 lark-memory-cli --update
@@ -171,9 +170,8 @@ lark-memory-cli --update
 - wrapper：`${LARK_CLI_PREFIX:-$HOME/.local}/bin/lark-memory-cli`
 
 它会拉取 `jhn_memory` 分支、重新构建二进制、刷新
-`$HOME/.lark-cli-memory/bin/memoryctl`，并按当前热插拔状态同步 wrapper 和
-`lark-memory` skill：启用时更新启用路径，停用时更新 `.disabled` 路径，不会因为升级
-自动启用。
+`$HOME/.lark-cli-memory/bin/memoryctl`，并按源码中的 `skills/memory-managed-skills.txt` 清单同步
+受管 skills：启用时更新启用路径，停用时更新 `.disabled` 路径，不会因为升级自动启用。
 
 只检查是否有新提交，不执行安装：
 
@@ -328,10 +326,10 @@ hop、trace ID 和 `log_id`。试用期不做静默截断；下游错误、413�
 `memory +graph-search` 用自然语言 query 调用字节跳动内网 Knowledge QA，自动生成 Graph Root 并以 BFS
 执行最多三跳 OneHop：
 
-安装后可在 Codex Skill 选择器中直接选择 `Graph Search`，并把选择项后的文本作为 query：
+安装后可在 Codex Skill 选择器中直接选择 `memory-graph-search`，并把选择项后的文本作为 query：
 
 ```text
-@Graph Search 什么是知识问答
+@memory-graph-search 什么是知识问答
 ```
 
 命令会验证当前 UAT，读取其 `open_id` 并自动转换为内部 UID，不再依赖本地 UID 环境变量。Skill

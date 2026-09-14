@@ -1,7 +1,7 @@
 ---
 name: lark-memory
-version: 0.1.7
-description: "Use when users need Memory Hub long-term context, preferences, history, project background, or explicit Memory Graph node and edge queries."
+version: 0.1.8
+description: "Route Memory Hub requests when no command-specific memory-* skill was explicitly selected. Use for long-term context, preferences, history, project background, and choosing among Memory or Graph operations."
 metadata:
   requires:
     bins: ["lark-memory-cli"]
@@ -28,12 +28,15 @@ metadata:
 
 ## 命令路由
 
+- 用户显式选择 `memory-list`、`memory-get`、`memory-graph-query`、`memory-graph-one-hop` 或
+  `memory-graph-search` 时，优先遵循对应的命令 skill；本 skill 仅作为总路由和共享契约。
 - 查询可见 memory 或读取 memory 快照、偏好、长期上下文：使用 `+list` / `+get`。
 - 仅当用户明确要求查询历史 Memory Graph 节点或边时使用 `memory +graph-query`；不得用
   `+list` / `+get` 替代 Graph 查询。
 - 已知可靠的 NodeType + RootID，需要沿 Graph 查看直接关联内容时使用 `memory +graph-one-hop`；
   不得用 SourceID 猜 RootID，不得由 CLI 自动循环多跳。
-- 用户选择 `Graph Search` 或输入 `graph search <query>` 时，改用独立的 `graph-search` skill。
+- 用户选择 `memory-graph-search` 或输入 `memory graph search <query>` 时，改用独立的
+  `memory-graph-search` skill。
 
 ## List/Get 流程
 

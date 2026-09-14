@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,15 @@ const (
 	memoryUpdateBuildTimeout = 10 * time.Minute
 	memoryModulePath         = "code.byted.org/lark_search/larksuite-cli"
 	memoryDefaultRepoURL     = "https://github.com/arnold9672/cli.git"
+	memoryManagedSkillsFile  = "memory-managed-skills.txt"
+	memoryMinimumGoMajor     = 1
+	memoryMinimumGoMinor     = 23
+)
+
+var (
+	memoryGoReadDir        = vfs.ReadDir
+	memoryGoVersionPattern = regexp.MustCompile(`\bgo(\d+)\.(\d+)`)
+	memorySkillNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
 
 // MemoryUpdateOptions describes a lark-memory-cli source-install update.
@@ -327,18 +338,59 @@ func syncMemorySkillsPreservingState(sourceDir string) ([]string, string) {
 	if err != nil {
 		return nil, fmt.Sprintf("resolve home dir: %v", err)
 	}
+	managedSkills, err := readManagedMemorySkills(sourceDir)
+	if err != nil {
+		return nil, err.Error()
+	}
 	var synced []string
 	var warnings []string
 	roots := []string{filepath.Join(home, ".agents", "skills"), filepath.Join(home, ".codex", "skills")}
 	for _, root := range roots {
-		rootSynced, rootWarnings := syncMemorySkillRootPreservingState(sourceDir, root)
+		rootSynced, rootWarnings := syncMemorySkillRootPreservingState(sourceDir, root, managedSkills)
 		synced = append(synced, rootSynced...)
 		warnings = append(warnings, rootWarnings...)
 	}
 	return synced, strings.Join(warnings, "; ")
 }
 
-func syncMemorySkillRootPreservingState(sourceDir, root string) ([]string, []string) {
+func readManagedMemorySkills(sourceDir string) ([]string, error) {
+	path := filepath.Join(sourceDir, "skills", memoryManagedSkillsFile)
+	data, err := vfs.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read managed Memory skills manifest %q: %w", path, err)
+	}
+	seen := make(map[string]struct{})
+	managed := make([]string, 0, 4)
+	for lineNumber, raw := range strings.Split(string(data), "\n") {
+		name := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
+		if name == "" {
+			continue
+		}
+		if !memorySkillNamePattern.MatchString(name) {
+			return nil, fmt.Errorf("invalid managed Memory skill %q at %s:%d", name, path, lineNumber+1)
+		}
+		if _, ok := seen[name]; ok {
+			return nil, fmt.Errorf("duplicate managed Memory skill %q at %s:%d", name, path, lineNumber+1)
+		}
+		if info, statErr := vfs.Stat(filepath.Join(sourceDir, "skills", name)); statErr != nil || !info.IsDir() {
+			if statErr != nil {
+				return nil, fmt.Errorf("managed Memory skill source %q is unavailable: %w", name, statErr)
+			}
+			return nil, fmt.Errorf("managed Memory skill source %q is not a directory", name)
+		}
+		seen[name] = struct{}{}
+		managed = append(managed, name)
+	}
+	if len(managed) == 0 {
+		return nil, fmt.Errorf("managed Memory skills manifest %q is empty", path)
+	}
+	if _, ok := seen["lark-memory"]; !ok {
+		return nil, fmt.Errorf("managed Memory skills manifest %q must include lark-memory", path)
+	}
+	return managed, nil
+}
+
+func syncMemorySkillRootPreservingState(sourceDir, root string, managedSkills []string) ([]string, []string) {
 	var synced []string
 	var warnings []string
 	primaryActive := filepath.Join(root, "lark-memory")
@@ -349,7 +401,7 @@ func syncMemorySkillRootPreservingState(sourceDir, root string) ([]string, []str
 		primaryState = "missing"
 	}
 
-	for _, skill := range []string{"lark-memory", "graph-search"} {
+	for _, skill := range managedSkills {
 		src := filepath.Join(sourceDir, "skills", skill)
 		active := filepath.Join(root, skill)
 		disabled := filepath.Join(root, ".disabled", skill)
@@ -497,18 +549,45 @@ func copyDirContents(src, dst string) error {
 }
 
 func selectGoBinary() (string, error) {
-	var candidates []string
-	if goBin := strings.TrimSpace(os.Getenv("GO_BIN")); goBin != "" {
-		candidates = append(candidates, goBin)
-	}
-	candidates = append(candidates,
+	return selectGoBinaryFromCandidates(memoryGoBinaryCandidates(strings.TrimSpace(os.Getenv("GO_BIN"))))
+}
+
+func memoryGoBinaryCandidates(explicit string) []string {
+	candidates := []string{explicit,
 		"/opt/homebrew/opt/go/libexec/bin/go",
+		"/usr/local/opt/go/libexec/bin/go",
 		"/usr/local/go/bin/go",
 		"/usr/local/bytesuite-box/pkg/go/1.24.1/bin/go",
-	)
-	if path, err := exec.LookPath("go"); err == nil {
+	}
+	for _, cellar := range []string{
+		"/opt/homebrew/Cellar/go",
+		"/usr/local/Cellar/go",
+	} {
+		candidates = append(candidates, memoryGoCellarCandidates(cellar)...)
+	}
+	candidates = append(candidates, "/opt/homebrew/bin/go", "/usr/local/bin/go")
+	if path, err := execLookPath("go"); err == nil {
 		candidates = append(candidates, path)
 	}
+	return candidates
+}
+
+func memoryGoCellarCandidates(cellar string) []string {
+	entries, err := memoryGoReadDir(cellar)
+	if err != nil {
+		return nil
+	}
+	candidates := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		candidates = append(candidates, filepath.Join(cellar, entry.Name(), "libexec", "bin", "go"))
+	}
+	return candidates
+}
+
+func selectGoBinaryFromCandidates(candidates []string) (string, error) {
 	seen := map[string]bool{}
 	var failures []string
 	for _, candidate := range candidates {
@@ -516,16 +595,37 @@ func selectGoBinary() (string, error) {
 			continue
 		}
 		seen[candidate] = true
-		if _, err := commandOutputWithEnv("", 10*time.Second, envForGoCommand(), candidate, "version"); err != nil {
+		versionOutput, err := commandOutputWithEnv("", 10*time.Second, envForGoCommand(), candidate, "version")
+		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", candidate, err))
+			continue
+		}
+		if !memoryGoVersionSupported(versionOutput) {
+			failures = append(failures, fmt.Sprintf("%s: %s is older than required Go %d.%d", candidate,
+				strings.TrimSpace(versionOutput), memoryMinimumGoMajor, memoryMinimumGoMinor))
 			continue
 		}
 		return candidate, nil
 	}
 	if len(failures) > 0 {
-		return "", fmt.Errorf("no usable Go toolchain found; tried %s", strings.Join(failures, "; "))
+		return "", fmt.Errorf("no usable Go %d.%d+ toolchain found; tried %s; set GO_BIN to an absolute Go binary path",
+			memoryMinimumGoMajor, memoryMinimumGoMinor, strings.Join(failures, "; "))
 	}
-	return "", fmt.Errorf("no usable Go toolchain found")
+	return "", fmt.Errorf("no usable Go %d.%d+ toolchain found; set GO_BIN to an absolute Go binary path",
+		memoryMinimumGoMajor, memoryMinimumGoMinor)
+}
+
+func memoryGoVersionSupported(output string) bool {
+	match := memoryGoVersionPattern.FindStringSubmatch(output)
+	if len(match) != 3 {
+		return false
+	}
+	major, majorErr := strconv.Atoi(match[1])
+	minor, minorErr := strconv.Atoi(match[2])
+	if majorErr != nil || minorErr != nil {
+		return false
+	}
+	return major > memoryMinimumGoMajor || major == memoryMinimumGoMajor && minor >= memoryMinimumGoMinor
 }
 
 func commandOutput(dir string, timeout time.Duration, name string, args ...string) (string, error) {
