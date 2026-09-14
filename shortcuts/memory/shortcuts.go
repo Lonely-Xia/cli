@@ -3,7 +3,10 @@
 
 package memory
 
-import "code.byted.org/lark_search/larksuite-cli/shortcuts/common"
+import (
+	"code.byted.org/lark_search/larksuite-cli/internal/deprecation"
+	"code.byted.org/lark_search/larksuite-cli/shortcuts/common"
+)
 
 const (
 	memoryService       = "memory"
@@ -22,5 +25,28 @@ func Shortcuts() []common.Shortcut {
 		MemoryList,
 		MemoryGet,
 		MemoryGraphQuery,
+		MemoryGraphOneHop,
+		MemoryGraphSearch,
+		MemoryOneHop,
 	}
+}
+
+func deprecatedShortcutAlias(current common.Shortcut, legacyService, legacyCommand, replacement string) common.Shortcut {
+	alias := current
+	alias.Service = legacyService
+	alias.Command = legacyCommand
+	alias.Hidden = true
+	notice := &deprecation.Notice{
+		Command:     legacyService + " " + legacyCommand,
+		Replacement: replacement,
+		Skill:       "lark-memory",
+	}
+	previousOnInvoke := alias.OnInvoke
+	alias.OnInvoke = func() {
+		if previousOnInvoke != nil {
+			previousOnInvoke()
+		}
+		deprecation.SetPending(notice)
+	}
+	return alias
 }

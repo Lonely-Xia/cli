@@ -1,15 +1,17 @@
 # lark-memory-cli
 
-`lark-memory-cli` 是这个 fork 中面向 Memory Hub 的专用命令入口，目前只聚焦三个
+`lark-memory-cli` 是这个 fork 中面向 Memory Hub 的专用命令入口，目前只聚焦五个
 shortcuts：
 
 - `lark-memory-cli memory +list`
 - `lark-memory-cli memory +get`
 - `lark-memory-cli memory +graph-query`
+- `lark-memory-cli memory +graph-one-hop`
+- `lark-memory-cli memory +graph-search`
 
-这三个命令使用用户身份调用，需要 `memory:hub` scope。Memory Hub 当前默认调用
-线上 OpenAPI 域名，并继续发送 `x-tt-env: ppe_memory_hub`；安装脚本会生成独立
-wrapper，不覆盖用户已有 `lark-cli` 命令。
+这五个命令使用用户身份调用，需要 `memory:hub` scope。Memory Hub 当前默认调用
+线上 OpenAPI 域名；五个命令的 Memory/Graph/FaaS 业务请求统一发送
+`x-tt-env: ppe_memory_hub`。安装脚本会生成独立 wrapper，不覆盖用户已有 `lark-cli` 命令。
 
 更完整的安装与排障说明见 [MEMORY_SHORTCUTS.md](./MEMORY_SHORTCUTS.md)。
 
@@ -97,10 +99,10 @@ export GO_BIN="/path/to/go"
 export LARKSUITE_CLI_CONFIG_DIR="$HOME/.config/lark-memory-cli"
 ```
 
-安装脚本也会把 `lark-memory` skill 同步到 `$HOME/.agents/skills/lark-memory`
-和 `$HOME/.codex/skills/lark-memory`。如果目标目录缺少 `lark-shared`，会补一份
+安装脚本也会把 `lark-memory` 和独立的 `graph-search` skill 同步到
+`$HOME/.agents/skills` 与 `$HOME/.codex/skills`。如果目标目录缺少 `lark-shared`，会补一份
 作为依赖。Codex/Agent 的 skill 列表通常在会话启动时加载；安装后命令立即可用，
-但 `lark-memory` 要出现在 skill 列表里，需要重启或新开一个 Codex/Agent 会话。
+但新 skill 要出现在选择器里，需要重启或新开一个 Codex/Agent 会话。
 
 ## 热插拔和状态
 
@@ -116,7 +118,7 @@ $HOME/.lark-cli-memory/bin/memoryctl status
 # 查看当前是否启用，JSON 适合脚本或 Agent 读取
 $HOME/.lark-cli-memory/bin/memoryctl status --json
 
-# 启用 lark-memory-cli wrapper 和 lark-memory skill
+# 启用 lark-memory-cli wrapper、lark-memory 和 graph-search skills
 $HOME/.lark-cli-memory/bin/memoryctl enable
 
 # 停用 wrapper 和 skill，但保留源码、二进制、登录态和配置
@@ -127,7 +129,7 @@ $HOME/.lark-cli-memory/bin/memoryctl disable --skills-only
 ```
 
 `disable` 会把 wrapper 移到 `$HOME/.local/bin/.disabled/lark-memory-cli`，并把
-`lark-memory` skill 移到各 skill root 的 `.disabled/lark-memory`。重新 `enable`
+`lark-memory`、`graph-search` skills 移到各 skill root 的 `.disabled` 目录。重新 `enable`
 会原路恢复。Codex/Agent 通常只在会话启动时扫描 skill，切换后请重启或新开会话。
 
 ## 升级
@@ -140,8 +142,8 @@ lark-memory-cli --update
 
 这个命令会拉取安装目录中的 `jhn_memory` 分支、重新构建
 `$HOME/.local/libexec/lark-memory-cli/lark-cli`、刷新
-`$HOME/.lark-cli-memory/bin/memoryctl`，并按当前热插拔状态同步 wrapper 和
-`lark-memory` skill：启用时更新启用路径，停用时更新 `.disabled` 路径，不会因为升级
+`$HOME/.lark-cli-memory/bin/memoryctl`，并按当前热插拔状态同步 wrapper、
+`lark-memory` 和 `graph-search` skills：启用时更新启用路径，停用时更新 `.disabled` 路径，不会因为升级
 自动启用。
 
 只检查是否有新提交，不执行安装：
@@ -224,7 +226,7 @@ lark-memory-cli memory +get --as user \
 
 ## 查询 Memory Graph 历史数据
 
-`+graph-query` 仅支持查询当前登录用户的历史 Memory Graph 节点或边，请求体中的
+`memory +graph-query` 仅支持查询当前登录用户的历史 Memory Graph 节点或边，请求体中的
 `user_id` 会自动使用登录态的 `open_id`。
 
 ```bash
@@ -245,6 +247,97 @@ lark-memory-cli memory +graph-query --as user \
 - `--detail-format`：Graph 详情格式，支持 `markdown`（默认）和 `json`。
 - `--format`：输出格式，支持 `json`、`ndjson` 和 `pretty`；不支持 `table`、`csv` 和 `--jq`。
 
+## 查询 Memory Graph 一跳关系
+
+已知稳定业务实体的 NodeType 和 RootID 后，使用 `memory +graph-one-hop` 查询该实体在滚动时间窗内
+的时间线节点，以及这些节点通过入边或出边直接关联的一跳节点：
+
+```bash
+lark-memory-cli memory +graph-one-hop --as user \
+  --root '2:doc_123' \
+  --root '3:meeting_123' \
+  --lookback-days 7 \
+  --node-type 2,3 \
+  --relation-type meeting_discusses_doc \
+  --detail-format markdown \
+  --hop 1 \
+  --trace-id trace-xxx \
+  --format json
+```
+
+`--root` 和 `--hop` 必填。`--root` 可重复，格式为 `<node_type>:<root_id>`；节点类型编号为
+IM_DAY=1、DOC_DAY=2、MEETING=3、USER=4、CALENDAR=5。当前目标过滤只支持 1、2、3；未传
+`--node-type` 时不发送 `filters.node_types`。USER
+不能作为 Root 或目标过滤类型，CALENDAR（5）尚未支持作为 Root 或目标过滤，CLI 还会从响应中删除
+USER 节点及其关联边。
+
+`--lookback-days` 默认 7，CLI 以执行时刻为右开边界构造完整滚动时间窗；一次命令只发送一次
+OneHop 请求，不做 24 小时切片，也不自动继续下一跳。`--hop` 只记录 Agent 当前探索层数，范围
+1～5；未传 `--trace-id` 时自动生成。`--hop`、`--trace-id` 和 `--scene` 仅作为 CLI 输出元数据，
+不发送给 GraphHub。下行 `params` 只发送协议字段 `detailFormat`。输出支持 `json` 和 `pretty`。
+
+JSON 输出的 `data.nodes` 和 `data.edges` 保留下游详情，并补充 `expanded_from` 来源信息；节点还会
+包含 `expandable`。`meta` 包含 Root、节点、边、USER 过滤、Detail 字节数、耗时、hop、trace ID
+和可用的 OpenAPI `log_id`。CLI 不截断 OneHop 结果；下游失败或响应结构不完整时返回结构化错误。
+
+## 内网自然语言 Graph Search
+
+`memory +graph-search` 先通过 Knowledge QA 召回当前 UID 可见的 Doc、Wiki、Message 和 Minutes，再把
+Doc/Wiki 转成 DOC_DAY Root、Message 转成 IM_DAY Root，并以 BFS 自动执行最多三跳 OneHop。
+Minutes 只保留为候选，不进入 OneHop。
+
+面向 Codex 的推荐入口是从 Skill 选择器直接选择 `Graph Search`，然后输入 query，例如：
+
+```text
+@Graph Search 什么是知识问答
+```
+
+Codex 会把选择项后的文本作为 query，并在内部执行下面的 CLI 命令。命令会验证当前 UAT，读取其
+`open_id` 并自动转换为内部 UID，不再需要本地 UID 环境变量：
+
+```bash
+lark-memory-cli memory +graph-search --as user \
+  --query "什么是知识问答" \
+  --max-hops 3 \
+  --concurrency 8 \
+  --detail-format markdown \
+  --graph-query-mode auto \
+  --graph-query-lookback-days 7 \
+  --format json
+```
+
+- 该命令仅在字节跳动内网可用；`TenantID=1`、`AppID=1234` 固定。
+- Graph Search 的身份转换 FaaS、Knowledge QA FaaS、OneHop 与补充 GraphQuery 统一发送
+  `x-tt-env: ppe_memory_hub`，与其它四个命令一致。可用 `LARKSUITE_CLI_MEMORY_TT_ENV`
+  临时覆盖当前进程。
+- 调用 Knowledge QA 前，命令先用当前 UAT 调用 `/open-apis/authen/v1/user_info` 获取 `open_id`，再通过
+  `https://lgadymoe.fn.bytedance.net/knowledge_qa/out_id_to_in_id` 转换为内部 UID；Knowledge QA 使用同一
+  FaaS 下的 `/knowledge_qa/search`。转换请求与 Graph
+  请求使用相同 `x-tt-env`，不存在本地 UID 覆盖入口。
+- `search_candidates` 只来自权限过滤后的 `passages`，并保留候选 `content` 作为最新事实基线；
+  `passages_ignore_filter` 永远不会进入输出或成为 Graph 起点。
+- Wiki 节点会使用 `wiki:node:retrieve` 解析底层 `obj_token`；单个 Wiki 解析失败只跳过该候选。
+- 每跳按 Asia/Shanghai 日期分组并发请求，跳间串行；默认并发度 8，结果规模不截断。
+- `roots[].search_origins` 记录 NodeType、RootID 和日期的推导来源；不得用 `source_id` 猜下一跳 Root。
+- `data.evidence` 索引节点和边的 Detail 路径、缺失情况、端点完整性和重复关系分组；每跳同时输出
+  `new_node_count`、`new_edge_count` 及对应 Detail 数量。若一跳没有新增点或边，将提前停止。
+- `--graph-query-mode=auto` 仅在“最近/上周/过去 N 天/recent/latest/明确日期”等时间意图下，
+  与 Knowledge QA 并行查询用户 Graph；今天、昨天、本周、上周、最近 N 天和明确日期使用精确自然时间窗，
+  其它时间意图回退配置的 1～7 天窗口。超过 7 天不静默截断，而是跳过补充并说明原因。
+- GraphQuery 与 OneHop 使用同一泳道，返回点边只在 OneHop 结束后按 NodeID/EdgeID 合并，不进入
+  OneHop frontier；`retrieved_via` 和 evidence `retrieval_class` 标记 `one_hop_only`、
+  `graph_query_only`、`corroborated`。GraphQuery 窗口失败时保留主链路结果并设置 `complete=false`。
+- Knowledge QA 返回后立即开始 Wiki/OneHop，不等待独立 GraphQuery；最终答案仍等待两路汇合。
+  `--concurrency` 是 FaaS、GraphQuery、Wiki 和 OneHop 共用的全局请求上限，不会因流水并行而翻倍。
+- 发起 Knowledge QA 或 Graph 请求前严格解析并刷新 UAT，并通过 `user_info` 在服务端验证；缺失、过期、
+  刷新失败或身份转换失败时不执行检索。试用期仍保留 `--max-hops=3`，不因时间型 Query 自动减少证据集合。
+- 同一命令内相同 Wiki `node_token` 只调用一次 get-node，重复候选复用解析结果，候选来源仍完整保留。
+- 内网试用期不启用两阶段预筛选、硬截断或静默裁剪 Detail；权限内候选及全部返回点边 Detail
+  保持可用，用于验证 Graph 证据的能力上限。`evidence` / `edge_groups` 只做归因和重复感知。
+- 单个 OneHop 分组最终失败时，其它成功分组继续扩展；输出用 `meta.complete=false` 和
+  `data.failed_batches` 标记部分成功。所有 OneHop 分组均失败时命令才整体失败。
+- `--dry-run` 展示脱敏的 user_info、ID 转换、Knowledge QA 请求和动态阶段说明，不执行任何远端调用。
+
 ## 排障
 
 确认 wrapper 指向独立的 memory binary，且没有强制覆盖 OpenAPI 域名：
@@ -259,8 +352,8 @@ head -n 5 "$(command -v lark-memory-cli)"
 LARKSUITE_CLI_REMOTE_META="${LARKSUITE_CLI_REMOTE_META:-off}"
 ```
 
-默认请求走线上 OpenAPI 域名，并继续发送 `x-tt-env: ppe_memory_hub`。如果需要临时回到
-pre 域名验证，可以显式设置：
+默认请求走线上 OpenAPI 域名。五个命令的 Memory/Graph/FaaS 业务请求统一发送
+`x-tt-env: ppe_memory_hub`。如需覆盖，可以显式设置：
 
 ```bash
 export LARKSUITE_CLI_OPEN_BASE_URL="https://open.feishu-pre.cn"

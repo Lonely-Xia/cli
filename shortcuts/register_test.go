@@ -110,6 +110,34 @@ func TestRegisterShortcutsMountsBaseCommands(t *testing.T) {
 	}
 }
 
+func TestRegisterShortcutsMountsGraphCommandsUnderMemory(t *testing.T) {
+	program := &cobra.Command{Use: "root"}
+	RegisterShortcuts(program, newRegisterTestFactory(t))
+
+	for _, name := range []string{"+graph-query", "+graph-one-hop", "+graph-search"} {
+		command, remaining, err := program.Find([]string{"memory", name})
+		if err != nil || command == nil || len(remaining) != 0 {
+			t.Fatalf("find memory %s: command=%#v remaining=%v err=%v", name, command, remaining, err)
+		}
+		if command.Hidden {
+			t.Fatalf("canonical memory %s must be visible", name)
+		}
+		if got := cmdmeta.Domain(command); got != "memory" {
+			t.Fatalf("memory %s domain = %q, want memory", name, got)
+		}
+	}
+
+	for _, path := range [][]string{{"memory", "+one-hop"}} {
+		command, _, err := program.Find(path)
+		if err != nil || command == nil {
+			t.Fatalf("find compatibility alias %v: command=%#v err=%v", path, command, err)
+		}
+		if !command.Hidden {
+			t.Fatalf("compatibility alias %v must be hidden", path)
+		}
+	}
+}
+
 func TestRegisterShortcutsMountsHiddenAppsGitCredentialHelper(t *testing.T) {
 	program := &cobra.Command{Use: "root"}
 	RegisterShortcuts(program, newRegisterTestFactory(t))

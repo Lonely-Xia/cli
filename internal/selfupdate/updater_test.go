@@ -151,6 +151,7 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 	t.Setenv("HOME", home)
 	sourceDir := t.TempDir()
 	writeTestSkill(t, sourceDir, "lark-memory", "memory-v2")
+	writeTestSkill(t, sourceDir, "graph-search", "graph-search-v2")
 	writeTestSkill(t, sourceDir, "lark-shared", "shared-v2")
 
 	agentsDisabled := filepath.Join(home, ".agents", "skills", ".disabled", "lark-memory")
@@ -174,17 +175,26 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
 	}
 	assertFileContent(t, filepath.Join(agentsDisabled, "SKILL.md"), "memory-v2")
+	agentsGraphDisabled := filepath.Join(home, ".agents", "skills", ".disabled", "graph-search")
+	assertFileContent(t, filepath.Join(agentsGraphDisabled, "SKILL.md"), "graph-search-v2")
 	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "lark-memory")); !os.IsNotExist(err) {
 		t.Fatalf("agents skill was re-enabled unexpectedly: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "graph-search")); !os.IsNotExist(err) {
+		t.Fatalf("agents graph search skill was enabled unexpectedly: %v", err)
+	}
 	assertFileContent(t, filepath.Join(codexActive, "SKILL.md"), "memory-v2")
+	codexGraphActive := filepath.Join(home, ".codex", "skills", "graph-search")
+	assertFileContent(t, filepath.Join(codexGraphActive, "SKILL.md"), "graph-search-v2")
 	assertFileContent(t, filepath.Join(home, ".agents", "skills", "lark-shared", "SKILL.md"), "shared-v2")
 	assertFileContent(t, filepath.Join(home, ".codex", "skills", "lark-shared", "SKILL.md"), "shared-v2")
 
 	wantSynced := []string{
 		agentsDisabled,
+		agentsGraphDisabled,
 		filepath.Join(home, ".agents", "skills", "lark-shared"),
 		codexActive,
+		codexGraphActive,
 		filepath.Join(home, ".codex", "skills", "lark-shared"),
 	}
 	for _, want := range wantSynced {

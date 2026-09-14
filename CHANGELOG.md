@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## graphcli-v1.0.0 - 2026-09-14
+
+### Features
+
+- **memory**: Add `memory +graph-one-hop` for stable-root one-hop Graph queries.
+- **memory**: Add intranet-only `memory +graph-search`, composing Knowledge QA, Wiki root resolution, bounded multi-hop OneHop traversal, and optional time-window GraphQuery evidence.
+- **skills**: Add the selectable `graph-search` skill and sync it alongside `lark-memory` during install and source updates.
+
+### Changed
+
+- **memory**: Unify the five Memory/Graph/FaaS business request paths on `x-tt-env: ppe_memory_hub`.
+- **memory**: Rename the public Graph commands to `memory +graph-query`, `memory +graph-one-hop`, and `memory +graph-search`, retaining the old OneHop spelling as a hidden compatibility alias.
+- **memory**: Derive the Knowledge QA internal UID from the current UAT instead of accepting a local user ID.
+
 ## [v1.0.5] - 2026-07-10
 
 ### Changed
