@@ -151,8 +151,9 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 	t.Setenv("HOME", home)
 	sourceDir := t.TempDir()
 	writeTestSkill(t, sourceDir, "lark-memory", "memory-v2")
-	writeTestSkill(t, sourceDir, "graph-search", "graph-search-v2")
+	writeTestSkill(t, sourceDir, "memory-graph-search", "graph-search-v2")
 	writeTestSkill(t, sourceDir, "lark-shared", "shared-v2")
+	writeManagedMemorySkillsManifest(t, sourceDir, "lark-memory", "memory-graph-search")
 
 	agentsDisabled := filepath.Join(home, ".agents", "skills", ".disabled", "lark-memory")
 	if err := os.MkdirAll(agentsDisabled, 0o755); err != nil {
@@ -175,16 +176,16 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
 	}
 	assertFileContent(t, filepath.Join(agentsDisabled, "SKILL.md"), "memory-v2")
-	agentsGraphDisabled := filepath.Join(home, ".agents", "skills", ".disabled", "graph-search")
+	agentsGraphDisabled := filepath.Join(home, ".agents", "skills", ".disabled", "memory-graph-search")
 	assertFileContent(t, filepath.Join(agentsGraphDisabled, "SKILL.md"), "graph-search-v2")
 	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "lark-memory")); !os.IsNotExist(err) {
 		t.Fatalf("agents skill was re-enabled unexpectedly: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "graph-search")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "memory-graph-search")); !os.IsNotExist(err) {
 		t.Fatalf("agents graph search skill was enabled unexpectedly: %v", err)
 	}
 	assertFileContent(t, filepath.Join(codexActive, "SKILL.md"), "memory-v2")
-	codexGraphActive := filepath.Join(home, ".codex", "skills", "graph-search")
+	codexGraphActive := filepath.Join(home, ".codex", "skills", "memory-graph-search")
 	assertFileContent(t, filepath.Join(codexGraphActive, "SKILL.md"), "graph-search-v2")
 	assertFileContent(t, filepath.Join(home, ".agents", "skills", "lark-shared", "SKILL.md"), "shared-v2")
 	assertFileContent(t, filepath.Join(home, ".codex", "skills", "lark-shared", "SKILL.md"), "shared-v2")
@@ -200,6 +201,122 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 	for _, want := range wantSynced {
 		if !containsString(synced, want) {
 			t.Fatalf("synced = %#v, missing %q", synced, want)
+		}
+	}
+}
+
+func TestReadManagedMemorySkillsRejectsInvalidManifest(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeTestSkill(t, sourceDir, "lark-memory", "memory")
+	writeManagedMemorySkillsManifest(t, sourceDir, "lark-memory", "../escape")
+
+	if _, err := readManagedMemorySkills(sourceDir); err == nil || !strings.Contains(err.Error(), "invalid managed Memory skill") {
+		t.Fatalf("readManagedMemorySkills() error = %v, want invalid managed skill", err)
+	}
+}
+
+func TestSyncMemorySkillsDiscoversNewManifestEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sourceDir := t.TempDir()
+	writeTestSkill(t, sourceDir, "lark-memory", "memory")
+	writeTestSkill(t, sourceDir, "memory-graph-search", "graph")
+	writeTestSkill(t, sourceDir, "future-memory-skill", "future")
+	writeTestSkill(t, sourceDir, "lark-shared", "shared")
+	writeManagedMemorySkillsManifest(t, sourceDir, "lark-memory", "memory-graph-search", "future-memory-skill")
+
+	synced, warning := syncMemorySkillsPreservingState(sourceDir)
+	if warning != "" {
+		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
+	}
+	for _, root := range []string{filepath.Join(home, ".agents", "skills"), filepath.Join(home, ".codex", "skills")} {
+		future := filepath.Join(root, "future-memory-skill")
+		assertFileContent(t, filepath.Join(future, "SKILL.md"), "future")
+		if !containsString(synced, future) {
+			t.Fatalf("synced = %#v, missing dynamically managed skill %q", synced, future)
+		}
+	}
+}
+
+func TestMemoryGoBinaryCandidatesIncludeCellarBeforePath(t *testing.T) {
+	oldReadDir := memoryGoReadDir
+	oldLookPath := execLookPath
+	t.Cleanup(func() {
+		memoryGoReadDir = oldReadDir
+		execLookPath = oldLookPath
+	})
+	entriesDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(entriesDir, "1.24.1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(entriesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memoryGoReadDir = func(path string) ([]os.DirEntry, error) {
+		switch path {
+		case "/opt/homebrew/Cellar/go":
+			return entries, nil
+		default:
+			return nil, nil
+		}
+	}
+	execLookPath = func(name string) (string, error) {
+		if name != "go" {
+			return "", fmt.Errorf("unexpected binary %q", name)
+		}
+		return "/broken/asdf/shims/go", nil
+	}
+
+	got := memoryGoBinaryCandidates("/custom/go")
+	cellarIndex := indexOfString(got, "/opt/homebrew/Cellar/go/1.24.1/libexec/bin/go")
+	pathIndex := indexOfString(got, "/broken/asdf/shims/go")
+	if len(got) == 0 || got[0] != "/custom/go" || cellarIndex < 0 || pathIndex < 0 || cellarIndex >= pathIndex {
+		t.Fatalf("memoryGoBinaryCandidates() = %#v, want explicit first and Cellar before PATH", got)
+	}
+}
+
+func TestSelectGoBinaryFromCandidatesSkipsBrokenAndOldVersions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX shell scripts")
+	}
+	dir := t.TempDir()
+	oldGo := filepath.Join(dir, "go-old")
+	newGo := filepath.Join(dir, "go-new")
+	if err := os.WriteFile(oldGo, []byte("#!/bin/sh\necho 'go version go1.22.9 darwin/arm64'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newGo, []byte("#!/bin/sh\necho 'go version go1.24.1 darwin/arm64'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := selectGoBinaryFromCandidates([]string{filepath.Join(dir, "missing"), oldGo, newGo})
+	if err != nil {
+		t.Fatalf("selectGoBinaryFromCandidates() error = %v", err)
+	}
+	if got != newGo {
+		t.Fatalf("selectGoBinaryFromCandidates() = %q, want %q", got, newGo)
+	}
+	if _, err := selectGoBinaryFromCandidates([]string{oldGo}); err == nil ||
+		!strings.Contains(err.Error(), "set GO_BIN to an absolute Go binary path") {
+		t.Fatalf("old-only selectGoBinaryFromCandidates() error = %v, want actionable GO_BIN hint", err)
+	}
+}
+
+func TestMemoryGoVersionSupported(t *testing.T) {
+	tests := []struct {
+		output string
+		want   bool
+	}{
+		{output: "go version go1.22.9 darwin/arm64", want: false},
+		{output: "go version go1.23.0 darwin/arm64", want: true},
+		{output: "go version go1.24.1 darwin/arm64", want: true},
+		{output: "go version go2.0.0 darwin/arm64", want: true},
+		{output: "unexpected", want: false},
+	}
+	for _, test := range tests {
+		if got := memoryGoVersionSupported(test.output); got != test.want {
+			t.Errorf("memoryGoVersionSupported(%q) = %t, want %t", test.output, got, test.want)
 		}
 	}
 }
@@ -340,6 +457,26 @@ func writeTestSkill(t *testing.T, sourceDir, name, content string) {
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write test skill %s: %v", name, err)
 	}
+}
+
+func writeManagedMemorySkillsManifest(t *testing.T, sourceDir string, skills ...string) {
+	t.Helper()
+	path := filepath.Join(sourceDir, "skills", memoryManagedSkillsFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir managed skills manifest dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(skills, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write managed skills manifest: %v", err)
+	}
+}
+
+func indexOfString(items []string, want string) int {
+	for index, item := range items {
+		if item == want {
+			return index
+		}
+	}
+	return -1
 }
 
 func assertFileContent(t *testing.T, path, want string) {
