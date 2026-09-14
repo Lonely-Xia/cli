@@ -1,0 +1,7 @@
+interface:
+  display_name: "Graph Search"
+  short_description: "Answer from seeded and time-window graph evidence"
+  default_prompt: "Use $graph-search to answer this query from fresh intranet candidates, seeded traversal, and relevant time-window graph evidence."
+
+policy:
+  allow_implicit_invocation: true

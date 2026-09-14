@@ -26,10 +26,11 @@ prefix="$tmp/prefix"
 home="$tmp/home"
 app_dir="$prefix/libexec/lark-memory-cli"
 
-mkdir -p "$source_dir/skills/lark-memory" "$source_dir/skills/lark-shared" "$app_dir" "$home"
+mkdir -p "$source_dir/skills/lark-memory" "$source_dir/skills/graph-search" "$source_dir/skills/lark-shared" "$app_dir" "$home"
 printf '%s\n' '#!/usr/bin/env bash' 'echo "fake lark-memory-cli"' > "$app_dir/lark-cli"
 chmod +x "$app_dir/lark-cli"
 printf '%s\n' 'memory skill v1' > "$source_dir/skills/lark-memory/SKILL.md"
+printf '%s\n' 'graph search skill v1' > "$source_dir/skills/graph-search/SKILL.md"
 printf '%s\n' 'shared skill v1' > "$source_dir/skills/lark-shared/SKILL.md"
 
 run_memoryctl() {
@@ -51,22 +52,30 @@ if grep -Fq 'open.feishu-pre.cn' "$prefix/bin/lark-memory-cli"; then
 fi
 test -f "$home/.agents/skills/lark-memory/SKILL.md" || fail "agents memory skill was not enabled"
 test -f "$home/.codex/skills/lark-memory/SKILL.md" || fail "codex memory skill was not enabled"
+test -f "$home/.agents/skills/graph-search/SKILL.md" || fail "agents graph search skill was not enabled"
+test -f "$home/.codex/skills/graph-search/SKILL.md" || fail "codex graph search skill was not enabled"
 test -f "$home/.agents/skills/lark-shared/SKILL.md" || fail "agents shared skill was not installed"
 test -f "$home/.codex/skills/lark-shared/SKILL.md" || fail "codex shared skill was not installed"
 
 printf '%s\n' 'memory skill v2' > "$source_dir/skills/lark-memory/SKILL.md"
+printf '%s\n' 'graph search skill v2' > "$source_dir/skills/graph-search/SKILL.md"
 status="$(run_memoryctl enable --json)"
 assert_contains "$status" '"status": "enabled"'
 grep -Fq 'memory skill v2' "$home/.agents/skills/lark-memory/SKILL.md" || fail "enable did not refresh active agents memory skill"
 grep -Fq 'memory skill v2' "$home/.codex/skills/lark-memory/SKILL.md" || fail "enable did not refresh active codex memory skill"
+grep -Fq 'graph search skill v2' "$home/.agents/skills/graph-search/SKILL.md" || fail "enable did not refresh active agents graph search skill"
+grep -Fq 'graph search skill v2' "$home/.codex/skills/graph-search/SKILL.md" || fail "enable did not refresh active codex graph search skill"
 
 status="$(run_memoryctl disable --json)"
 assert_contains "$status" '"status": "disabled"'
 test ! -e "$prefix/bin/lark-memory-cli" || fail "active wrapper still exists after disable"
 test -x "$prefix/bin/.disabled/lark-memory-cli" || fail "disabled wrapper was not retained"
 test ! -e "$home/.agents/skills/lark-memory" || fail "agents memory skill still active after disable"
+test ! -e "$home/.agents/skills/graph-search" || fail "agents graph search skill still active after disable"
 test -f "$home/.agents/skills/.disabled/lark-memory/SKILL.md" || fail "agents memory skill was not disabled"
+test -f "$home/.agents/skills/.disabled/graph-search/SKILL.md" || fail "agents graph search skill was not disabled"
 test -f "$home/.codex/skills/.disabled/lark-memory/SKILL.md" || fail "codex memory skill was not disabled"
+test -f "$home/.codex/skills/.disabled/graph-search/SKILL.md" || fail "codex graph search skill was not disabled"
 
 status="$(run_memoryctl enable --json)"
 assert_contains "$status" '"status": "enabled"'
@@ -75,4 +84,6 @@ status="$(run_memoryctl disable --skills-only --json)"
 assert_contains "$status" '"status": "skills_disabled"'
 test -x "$prefix/bin/lark-memory-cli" || fail "wrapper should stay active with --skills-only"
 test ! -e "$home/.agents/skills/lark-memory" || fail "agents memory skill still active after --skills-only"
+test ! -e "$home/.agents/skills/graph-search" || fail "agents graph search skill still active after --skills-only"
 test -f "$home/.agents/skills/.disabled/lark-memory/SKILL.md" || fail "agents memory skill was not disabled by --skills-only"
+test -f "$home/.agents/skills/.disabled/graph-search/SKILL.md" || fail "agents graph search skill was not disabled by --skills-only"

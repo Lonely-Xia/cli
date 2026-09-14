@@ -15,8 +15,28 @@ type Envelope struct {
 
 // Meta carries optional metadata in envelope responses.
 type Meta struct {
-	Count    int    `json:"count,omitempty"`
-	Rollback string `json:"rollback,omitempty"`
+	Count                       int    `json:"count,omitempty"`
+	Rollback                    string `json:"rollback,omitempty"`
+	RootCount                   *int   `json:"root_count,omitempty"`
+	NodeCount                   *int   `json:"node_count,omitempty"`
+	EdgeCount                   *int   `json:"edge_count,omitempty"`
+	FilteredUserNodeCount       *int   `json:"filtered_user_node_count,omitempty"`
+	FilteredUserEdgeCount       *int   `json:"filtered_user_edge_count,omitempty"`
+	DetailBytes                 *int   `json:"detail_bytes,omitempty"`
+	TookMS                      *int64 `json:"took_ms,omitempty"`
+	LogID                       string `json:"log_id,omitempty"`
+	TraceID                     string `json:"trace_id,omitempty"`
+	Hop                         *int   `json:"hop,omitempty"`
+	Complete                    *bool  `json:"complete,omitempty"`
+	OneHopCalled                *bool  `json:"one_hop_called,omitempty"`
+	HopsExecuted                *int   `json:"hops_executed,omitempty"`
+	SearchCandidateCount        *int   `json:"search_candidate_count,omitempty"`
+	SkippedCandidateCount       *int   `json:"skipped_candidate_count,omitempty"`
+	FailedBatchCount            *int   `json:"failed_batch_count,omitempty"`
+	GraphQueryCalled            *bool  `json:"graph_query_called,omitempty"`
+	GraphQueryWindowCount       *int   `json:"graph_query_window_count,omitempty"`
+	GraphQueryFailedWindowCount *int   `json:"graph_query_failed_window_count,omitempty"`
+	StopReason                  string `json:"stop_reason,omitempty"`
 }
 
 // PendingNotice, if set, returns system-level notices to inject as the

@@ -19,12 +19,20 @@ func callMemoryAPITyped(rctx *common.RuntimeContext, method, apiPath string, bod
 }
 
 func callMemoryAPITypedWithContext(rctx *common.RuntimeContext, callCtx context.Context, method, apiPath string, body interface{}) (map[string]interface{}, error) {
+	return callMemoryAPITypedWithContextAndTTEnv(rctx, callCtx, method, apiPath, body, "")
+}
+
+func callMemoryAPITypedWithContextAndTTEnv(rctx *common.RuntimeContext, callCtx context.Context, method, apiPath string, body interface{}, ttEnv string) (map[string]interface{}, error) {
 	req := &larkcore.ApiReq{
 		HttpMethod: method,
 		ApiPath:    apiPath,
 		Body:       body,
 	}
-	resp, err := rctx.DoAPIWithHeadersContext(callCtx, req, memoryExtraHeaders())
+	headers := memoryExtraHeaders()
+	if value := strings.TrimSpace(ttEnv); value != "" {
+		headers.Set("x-tt-env", value)
+	}
+	resp, err := rctx.DoAPIWithHeadersContext(callCtx, req, headers)
 	if err != nil {
 		return nil, err
 	}

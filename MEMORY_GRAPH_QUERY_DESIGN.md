@@ -13,7 +13,7 @@ POST /open-apis/search/v2/memory_hub/graph_query
 已完成的数据。
 
 本项目在 `jhn_memory` 分支已有的 Memory shortcut、用户身份、`memory:hub` scope、PPE header、
-结构化错误和内容安全能力之上新增 `memory +graph-query`。
+结构化错误和内容安全能力之上提供 `memory +graph-query`。
 
 ## 2. 最终目标
 

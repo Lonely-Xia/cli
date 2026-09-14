@@ -10,7 +10,7 @@ APP_BIN="$APP_DIR/lark-cli"
 WRAPPER="$PREFIX/bin/lark-memory-cli"
 DISABLED_BIN_DIR="$PREFIX/bin/.disabled"
 DISABLED_WRAPPER="$DISABLED_BIN_DIR/lark-memory-cli"
-MEMORY_SKILL="lark-memory"
+MANAGED_SKILLS=("lark-memory" "graph-search")
 SHARED_SKILL="lark-shared"
 SKILL_LABELS=("agents" "codex")
 SKILL_ROOTS=("$HOME/.agents/skills" "$HOME/.codex/skills")
@@ -64,7 +64,7 @@ copy_dir_atomic() {
   [[ -d "$src" ]] || fail "skill source not found: $src"
   mkdir -p "$(dirname "$dst")"
   local tmp
-  tmp="$(dirname "$dst")/.${MEMORY_SKILL}.tmp.$$"
+  tmp="$(dirname "$dst")/.$(basename "$dst").tmp.$$"
   rm -rf "$tmp"
   mkdir -p "$tmp"
   cp -R "$src"/. "$tmp"/
@@ -130,11 +130,12 @@ ensure_shared_skill() {
   fi
 }
 
-enable_skill_root() {
+enable_named_skill_root() {
   local root="$1"
-  local active="$root/$MEMORY_SKILL"
-  local disabled="$root/.disabled/$MEMORY_SKILL"
-  local src="$SOURCE_DIR/skills/$MEMORY_SKILL"
+  local skill="$2"
+  local active="$root/$skill"
+  local disabled="$root/.disabled/$skill"
+  local src="$SOURCE_DIR/skills/$skill"
   local state
   state="$(path_state "$active" "$disabled")"
   case "$state" in
@@ -153,13 +154,22 @@ enable_skill_root() {
       fail "skill exists in both active and disabled locations: $active and $disabled"
       ;;
   esac
+}
+
+enable_skill_root() {
+  local root="$1"
+  local skill
+  for skill in "${MANAGED_SKILLS[@]}"; do
+    enable_named_skill_root "$root" "$skill"
+  done
   ensure_shared_skill "$root"
 }
 
-disable_skill_root() {
+disable_named_skill_root() {
   local root="$1"
-  local active="$root/$MEMORY_SKILL"
-  local disabled="$root/.disabled/$MEMORY_SKILL"
+  local skill="$2"
+  local active="$root/$skill"
+  local disabled="$root/.disabled/$skill"
   local state
   state="$(path_state "$active" "$disabled")"
   case "$state" in
@@ -173,6 +183,14 @@ disable_skill_root() {
       fail "skill exists in both active and disabled locations: $active and $disabled"
       ;;
   esac
+}
+
+disable_skill_root() {
+  local root="$1"
+  local skill
+  for skill in "${MANAGED_SKILLS[@]}"; do
+    disable_named_skill_root "$root" "$skill"
+  done
 }
 
 source_branch() {
@@ -197,6 +215,8 @@ overall_status() {
   shift 2
   local active_count=0
   local conflict_count=0
+  local expected_count
+  expected_count=$((${#SKILL_ROOTS[@]} * ${#MANAGED_SKILLS[@]}))
   local state
   for state in "$@"; do
     [[ "$state" == "active" ]] && active_count=$((active_count + 1))
@@ -205,7 +225,7 @@ overall_status() {
 
   if [[ "$wrapper_state" == "conflict" || "$conflict_count" -gt 0 ]]; then
     printf 'partial'
-  elif [[ "$wrapper_state" == "active" && "$app_exists" == "true" && "$active_count" -eq "${#SKILL_ROOTS[@]}" ]]; then
+  elif [[ "$wrapper_state" == "active" && "$app_exists" == "true" && "$active_count" -eq "$expected_count" ]]; then
     printf 'enabled'
   elif [[ "$wrapper_state" == "active" && "$active_count" -eq 0 ]]; then
     printf 'skills_disabled'
@@ -217,11 +237,13 @@ overall_status() {
 }
 
 collect_skill_states() {
-  local i
+  local i skill
   SKILL_STATES=()
   for ((i = 0; i < ${#SKILL_ROOTS[@]}; i++)); do
     local root="${SKILL_ROOTS[$i]}"
-    SKILL_STATES+=("$(path_state "$root/$MEMORY_SKILL" "$root/.disabled/$MEMORY_SKILL")")
+    for skill in "${MANAGED_SKILLS[@]}"; do
+      SKILL_STATES+=("$(path_state "$root/$skill" "$root/.disabled/$skill")")
+    done
   done
 }
 
@@ -246,9 +268,12 @@ print_status_text() {
   [[ -n "$cmd_path" ]] && printf ' (%s)' "$cmd_path"
   printf '\n\n'
   printf 'skills:\n'
-  local i
+  local i skill state_index=0
   for ((i = 0; i < ${#SKILL_ROOTS[@]}; i++)); do
-    printf '  %-6s %s/%s  %s\n' "${SKILL_LABELS[$i]}:" "${SKILL_ROOTS[$i]}" "$MEMORY_SKILL" "${SKILL_STATES[$i]}"
+    for skill in "${MANAGED_SKILLS[@]}"; do
+      printf '  %-6s %s/%s  %s\n' "${SKILL_LABELS[$i]}:" "${SKILL_ROOTS[$i]}" "$skill" "${SKILL_STATES[$state_index]}"
+      state_index=$((state_index + 1))
+    done
   done
   printf '\n'
   printf 'source:\n'
@@ -286,16 +311,24 @@ print_status_json() {
   printf '    "in_path": %s\n' "$in_path"
   printf '  },\n'
   printf '  "skills": {\n'
-  local i
+  local i j skill state_index=0
   for ((i = 0; i < ${#SKILL_ROOTS[@]}; i++)); do
     local comma=','
     [[ "$i" -eq $((${#SKILL_ROOTS[@]} - 1)) ]] && comma=''
-    printf '    "%s": {"path": "%s", "disabled_path": "%s", "state": "%s"}%s\n' \
-      "$(json_escape "${SKILL_LABELS[$i]}")" \
-      "$(json_escape "${SKILL_ROOTS[$i]}/$MEMORY_SKILL")" \
-      "$(json_escape "${SKILL_ROOTS[$i]}/.disabled/$MEMORY_SKILL")" \
-      "$(json_escape "${SKILL_STATES[$i]}")" \
-      "$comma"
+    printf '    "%s": {\n' "$(json_escape "${SKILL_LABELS[$i]}")"
+    for ((j = 0; j < ${#MANAGED_SKILLS[@]}; j++)); do
+      skill="${MANAGED_SKILLS[$j]}"
+      local skill_comma=','
+      [[ "$j" -eq $((${#MANAGED_SKILLS[@]} - 1)) ]] && skill_comma=''
+      printf '      "%s": {"path": "%s", "disabled_path": "%s", "state": "%s"}%s\n' \
+        "$(json_escape "$skill")" \
+        "$(json_escape "${SKILL_ROOTS[$i]}/$skill")" \
+        "$(json_escape "${SKILL_ROOTS[$i]}/.disabled/$skill")" \
+        "$(json_escape "${SKILL_STATES[$state_index]}")" \
+        "$skill_comma"
+      state_index=$((state_index + 1))
+    done
+    printf '    }%s\n' "$comma"
   done
   printf '  },\n'
   printf '  "source": {\n'

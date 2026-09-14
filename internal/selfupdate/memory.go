@@ -339,41 +339,50 @@ func syncMemorySkillsPreservingState(sourceDir string) ([]string, string) {
 }
 
 func syncMemorySkillRootPreservingState(sourceDir, root string) ([]string, []string) {
-	memorySrc := filepath.Join(sourceDir, "skills", "lark-memory")
-	memoryActive := filepath.Join(root, "lark-memory")
-	memoryDisabled := filepath.Join(root, ".disabled", "lark-memory")
-	state, err := activeDisabledState(memoryActive, memoryDisabled)
-	if err != nil {
-		return nil, []string{err.Error()}
-	}
-
 	var synced []string
 	var warnings []string
-	switch state {
-	case "active":
-		if err := copyDirAtomic(memorySrc, memoryActive); err != nil {
+	primaryActive := filepath.Join(root, "lark-memory")
+	primaryDisabled := filepath.Join(root, ".disabled", "lark-memory")
+	primaryState, err := activeDisabledState(primaryActive, primaryDisabled)
+	if err != nil {
+		warnings = append(warnings, err.Error())
+		primaryState = "missing"
+	}
+
+	for _, skill := range []string{"lark-memory", "graph-search"} {
+		src := filepath.Join(sourceDir, "skills", skill)
+		active := filepath.Join(root, skill)
+		disabled := filepath.Join(root, ".disabled", skill)
+		state, err := activeDisabledState(active, disabled)
+		if err != nil {
 			warnings = append(warnings, err.Error())
-			return synced, warnings
+			continue
 		}
-		synced = append(synced, memoryActive)
-	case "disabled":
-		if err := copyDirAtomic(memorySrc, memoryDisabled); err != nil {
+
+		target := active
+		switch state {
+		case "active":
+		case "disabled":
+			target = disabled
+		case "missing":
+			// A newly introduced managed skill follows the existing Memory
+			// feature state instead of silently re-enabling a disabled install.
+			if primaryState == "disabled" {
+				target = disabled
+			}
+		case "conflict":
+			warnings = append(warnings, fmt.Sprintf("skill exists in both active and disabled locations: %q and %q", active, disabled))
+			continue
+		default:
+			warnings = append(warnings, fmt.Sprintf("unknown skill state %q for %q", state, active))
+			continue
+		}
+
+		if err := copyDirAtomic(src, target); err != nil {
 			warnings = append(warnings, err.Error())
-			return synced, warnings
+			continue
 		}
-		synced = append(synced, memoryDisabled)
-	case "missing":
-		if err := copyDirAtomic(memorySrc, memoryActive); err != nil {
-			warnings = append(warnings, err.Error())
-			return synced, warnings
-		}
-		synced = append(synced, memoryActive)
-	case "conflict":
-		warnings = append(warnings, fmt.Sprintf("skill exists in both active and disabled locations: %q and %q", memoryActive, memoryDisabled))
-		return synced, warnings
-	default:
-		warnings = append(warnings, fmt.Sprintf("unknown skill state %q for %q", state, memoryActive))
-		return synced, warnings
+		synced = append(synced, target)
 	}
 
 	shared := filepath.Join(root, "lark-shared")

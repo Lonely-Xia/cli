@@ -31,11 +31,17 @@ import (
 
 func TestMemoryGraphQueryRegistered(t *testing.T) {
 	got := Shortcuts()
-	if len(got) != 3 {
-		t.Fatalf("len(Shortcuts()) = %d, want 3", len(got))
+	if len(got) != 6 {
+		t.Fatalf("len(Shortcuts()) = %d, want 6", len(got))
 	}
-	if got[0].Command != "+list" || got[1].Command != "+get" || got[2].Command != "+graph-query" {
-		t.Fatalf("commands = %q, %q, %q; want +list, +get, +graph-query", got[0].Command, got[1].Command, got[2].Command)
+	want := []string{"+list", "+get", "+graph-query", "+graph-one-hop", "+graph-search", "+one-hop"}
+	for index := range want {
+		if got[index].Command != want[index] {
+			t.Fatalf("commands[%d] = %q, want %q", index, got[index].Command, want[index])
+		}
+	}
+	if MemoryGraphQuery.Hidden || MemoryGraphOneHop.Hidden || MemoryGraphSearch.Hidden || !MemoryOneHop.Hidden {
+		t.Fatalf("canonical/compat metadata is inconsistent")
 	}
 }
 
@@ -209,7 +215,7 @@ func TestMemoryGraphQueryDryRunPlansEveryWindow(t *testing.T) {
 
 func TestMemoryGraphQueryPreflightReturnsTypedErrorWhenNormalizationWritebackFails(t *testing.T) {
 	setErr := errors.New("set detail format failed")
-	cmd := &cobra.Command{Use: "graph-query"}
+	cmd := &cobra.Command{Use: "+graph-query"}
 	cmd.Flags().Var(&rejectingGraphStringValue{value: " markdown ", err: setErr}, "detail-format", "")
 	cmd.Flags().String("start-time-sec", "100", "")
 	cmd.Flags().String("end-time-sec", "101", "")
