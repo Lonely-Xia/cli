@@ -91,7 +91,8 @@ export LARKSUITE_CLI_CONFIG_DIR="$HOME/.config/lark-memory-cli"
 
 安装脚本会把总路由 `lark-memory` 和五个命令选择器 `memory-list`、`memory-get`、
 `memory-graph-query`、`memory-graph-one-hop`、`memory-graph-search` 同步到
-`$HOME/.agents/skills` 与 `$HOME/.codex/skills`。
+`$HOME/.agents/skills`。Codex 和其它兼容 Agent 都从这个共享目录发现这些便携 skills，避免同时
+写入 `$HOME/.codex/skills` 后在选择器中重复展示。
 如果目标目录缺少 `lark-shared`，会补一份作为依赖。Codex/Agent 的 skill 列表通常在会话
 启动时加载；安装后命令立即可用，但新 skill 要出现在选择器里，需要重启或新开会话。
 
@@ -120,14 +121,15 @@ $HOME/.lark-cli-memory/bin/memoryctl disable --skills-only
 ```
 
 `disable` 会把 wrapper 移到 `$HOME/.local/bin/.disabled/lark-memory-cli`，并把
-所有受管 Memory skills 会移到各 skill root 的 `.disabled` 目录。重新 `enable` 会原路恢复。
+所有受管 Memory skills 移到 `$HOME/.agents/skills/.disabled`。重新 `enable` 会原路恢复。
 Codex/Agent 通常只在会话启动时扫描 skill，切换后请重启或新开会话。
 
 ## 升级
 
 从不包含五个 `memory-*` 命令选择器的旧版本升级时，使用下面的一次性兼容命令。它会自动寻找
 Go 1.23+、升级二进制，再用刚拉取的 `memoryctl refresh` 补齐所有受管 skills，同时保留当前
-启用或停用状态：
+启用或停用状态；旧版遗留在 `$HOME/.codex/skills` 的 Memory 重复项会被无损迁移到
+`$HOME/.codex/skills/.disabled/lark-memory-cli-duplicates`：
 
 ```bash
 bash -lc 'set -o pipefail; curl --proto "=https" --tlsv1.2 -fsSL \
@@ -144,6 +146,7 @@ lark-memory-cli --update
 `$HOME/.local/libexec/lark-memory-cli/lark-cli`、刷新
 `$HOME/.lark-cli-memory/bin/memoryctl`，并按源码中的 `skills/memory-managed-skills.txt` 清单同步
 受管 skills：启用时更新启用路径，停用时更新 `.disabled` 路径，不会因为升级自动启用。
+如果发现旧版曾同时写入 `$HOME/.codex/skills`，升级器会先归档对应重复项，避免 Codex 选择器展示两份。
 
 只检查是否有新提交，不执行安装：
 

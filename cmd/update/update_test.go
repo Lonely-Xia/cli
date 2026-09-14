@@ -251,6 +251,7 @@ func TestUpdateMemorySource_JSON(t *testing.T) {
 				Version:          "v1.0.1",
 				Updated:          true,
 				SkillsSynced:     []string{"/home/me/.agents/skills/lark-memory"},
+				SkillsArchived:   []string{"/home/me/.codex/skills/.disabled/lark-memory-cli-duplicates/lark-memory"},
 			}, nil
 		}
 		return u
@@ -269,6 +270,9 @@ func TestUpdateMemorySource_JSON(t *testing.T) {
 	}
 	if !strings.Contains(out, `"skills_action": "synced"`) {
 		t.Errorf("expected skills synced action, got: %s", out)
+	}
+	if !strings.Contains(out, `"duplicate_skills_action": "archived"`) {
+		t.Errorf("expected duplicate skills archived action, got: %s", out)
 	}
 }
 
@@ -308,6 +312,7 @@ func TestUpdateMemorySourceHumanShowsReadableVersion(t *testing.T) {
 				Version:          "v1.0.2",
 				Updated:          true,
 				SkillsSynced:     []string{"/home/me/.agents/skills/lark-memory"},
+				SkillsArchived:   []string{"/home/me/.codex/skills/.disabled/lark-memory-cli-duplicates/lark-memory"},
 			}, nil
 		}
 		return u
@@ -329,6 +334,9 @@ func TestUpdateMemorySourceHumanShowsReadableVersion(t *testing.T) {
 	}
 	if !strings.Contains(out, "Control: /home/me/.lark-cli-memory/bin/memoryctl") {
 		t.Errorf("expected Control line, got: %s", out)
+	}
+	if !strings.Contains(out, "archived 1 duplicate Codex skill directories") {
+		t.Errorf("expected duplicate archive summary, got: %s", out)
 	}
 	if !strings.Contains(out, "升级点:") {
 		t.Errorf("expected upgrade notes heading, got: %s", out)

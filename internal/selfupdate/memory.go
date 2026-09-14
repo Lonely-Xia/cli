@@ -59,6 +59,7 @@ type MemoryUpdateResult struct {
 	Version          string
 	Updated          bool
 	SkillsSynced     []string
+	SkillsArchived   []string
 	SkillsWarning    string
 }
 
@@ -170,8 +171,9 @@ func (u *Updater) UpdateMemorySource(opts MemoryUpdateOptions) (*MemoryUpdateRes
 		return nil, err
 	}
 	result.WrapperPath = wrapperPath
-	synced, warning := syncMemorySkillsPreservingState(opts.SourceDir)
+	synced, archived, warning := syncMemorySkillsPreservingState(opts.SourceDir)
 	result.SkillsSynced = synced
+	result.SkillsArchived = archived
 	result.SkillsWarning = warning
 	return result, nil
 }
@@ -333,24 +335,87 @@ func syncMemoryWrapperPreservingState(appDir, wrapperPath string) (string, error
 	}
 }
 
-func syncMemorySkillsPreservingState(sourceDir string) ([]string, string) {
+func syncMemorySkillsPreservingState(sourceDir string) ([]string, []string, string) {
 	home, err := vfs.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Sprintf("resolve home dir: %v", err)
+		return nil, nil, fmt.Sprintf("resolve home dir: %v", err)
 	}
 	managedSkills, err := readManagedMemorySkills(sourceDir)
 	if err != nil {
-		return nil, err.Error()
+		return nil, nil, err.Error()
 	}
-	var synced []string
+	root := filepath.Join(home, ".agents", "skills")
+	legacyPrimaryState, legacyStateErr := activeDisabledState(
+		filepath.Join(home, ".codex", "skills", "lark-memory"),
+		filepath.Join(home, ".codex", "skills", ".disabled", "lark-memory"),
+	)
 	var warnings []string
-	roots := []string{filepath.Join(home, ".agents", "skills"), filepath.Join(home, ".codex", "skills")}
-	for _, root := range roots {
-		rootSynced, rootWarnings := syncMemorySkillRootPreservingState(sourceDir, root, managedSkills)
-		synced = append(synced, rootSynced...)
-		warnings = append(warnings, rootWarnings...)
+	if legacyStateErr != nil {
+		warnings = append(warnings, legacyStateErr.Error())
+		legacyPrimaryState = "missing"
 	}
-	return synced, strings.Join(warnings, "; ")
+	synced, rootWarnings := syncMemorySkillRootPreservingState(sourceDir, root, managedSkills, legacyPrimaryState)
+	warnings = append(warnings, rootWarnings...)
+	duplicateSkills := append(append([]string(nil), managedSkills...), "graph-search")
+	archived, archiveWarnings := archiveCodexMemorySkillDuplicates(home, duplicateSkills)
+	warnings = append(warnings, archiveWarnings...)
+	return synced, archived, strings.Join(warnings, "; ")
+}
+
+func archiveCodexMemorySkillDuplicates(home string, skills []string) ([]string, []string) {
+	root := filepath.Join(home, ".codex", "skills")
+	archiveRoot := filepath.Join(root, ".disabled", "lark-memory-cli-duplicates")
+	seen := make(map[string]struct{}, len(skills))
+	var archived []string
+	var warnings []string
+	for _, skill := range skills {
+		if _, ok := seen[skill]; ok {
+			continue
+		}
+		seen[skill] = struct{}{}
+		active := filepath.Join(root, skill)
+		exists, err := pathExists(active)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("check duplicate skill %q: %v", active, err))
+			continue
+		}
+		if !exists {
+			continue
+		}
+		target, err := nextMemorySkillArchivePath(archiveRoot, skill)
+		if err != nil {
+			warnings = append(warnings, err.Error())
+			continue
+		}
+		if err := vfs.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			warnings = append(warnings, fmt.Sprintf("create duplicate skill archive %q: %v", filepath.Dir(target), err))
+			continue
+		}
+		if err := vfs.Rename(active, target); err != nil {
+			warnings = append(warnings, fmt.Sprintf("archive duplicate skill %q to %q: %v", active, target, err))
+			continue
+		}
+		archived = append(archived, target)
+	}
+	return archived, warnings
+}
+
+func nextMemorySkillArchivePath(archiveRoot, skill string) (string, error) {
+	for suffix := 0; suffix < 1000; suffix++ {
+		name := skill
+		if suffix > 0 {
+			name = fmt.Sprintf("%s.%d", skill, suffix)
+		}
+		candidate := filepath.Join(archiveRoot, name)
+		exists, err := pathExists(candidate)
+		if err != nil {
+			return "", fmt.Errorf("check duplicate skill archive %q: %w", candidate, err)
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no available duplicate skill archive path under %q for %q", archiveRoot, skill)
 }
 
 func readManagedMemorySkills(sourceDir string) ([]string, error) {
@@ -390,7 +455,7 @@ func readManagedMemorySkills(sourceDir string) ([]string, error) {
 	return managed, nil
 }
 
-func syncMemorySkillRootPreservingState(sourceDir, root string, managedSkills []string) ([]string, []string) {
+func syncMemorySkillRootPreservingState(sourceDir, root string, managedSkills []string, legacyPrimaryState string) ([]string, []string) {
 	var synced []string
 	var warnings []string
 	primaryActive := filepath.Join(root, "lark-memory")
@@ -399,6 +464,9 @@ func syncMemorySkillRootPreservingState(sourceDir, root string, managedSkills []
 	if err != nil {
 		warnings = append(warnings, err.Error())
 		primaryState = "missing"
+	}
+	if primaryState == "missing" && legacyPrimaryState == "disabled" {
+		primaryState = "disabled"
 	}
 
 	for _, skill := range managedSkills {

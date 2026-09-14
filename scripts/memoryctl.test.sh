@@ -55,30 +55,41 @@ if grep -Fq 'open.feishu-pre.cn' "$prefix/bin/lark-memory-cli"; then
   fail "wrapper should not force pre OpenAPI domain"
 fi
 test -f "$home/.agents/skills/lark-memory/SKILL.md" || fail "agents memory skill was not enabled"
-test -f "$home/.codex/skills/lark-memory/SKILL.md" || fail "codex memory skill was not enabled"
 test -f "$home/.agents/skills/memory-graph-search/SKILL.md" || fail "agents graph search skill was not enabled"
-test -f "$home/.codex/skills/memory-graph-search/SKILL.md" || fail "codex graph search skill was not enabled"
 for skill in memory-list memory-get memory-graph-query memory-graph-one-hop; do
   test -f "$home/.agents/skills/$skill/SKILL.md" || fail "agents $skill selector was not enabled"
-  test -f "$home/.codex/skills/$skill/SKILL.md" || fail "codex $skill selector was not enabled"
 done
 test -f "$home/.agents/skills/lark-shared/SKILL.md" || fail "agents shared skill was not installed"
-test -f "$home/.codex/skills/lark-shared/SKILL.md" || fail "codex shared skill was not installed"
+test ! -e "$home/.codex/skills/lark-memory" || fail "memory skill was duplicated into codex root"
+test ! -e "$home/.codex/skills/memory-graph-search" || fail "graph search skill was duplicated into codex root"
 
-rm -rf "$home/.agents/skills/memory-graph-search" "$home/.codex/skills/memory-graph-search"
+for skill in "${managed_skills[@]}" graph-search; do
+  mkdir -p "$home/.codex/skills/$skill"
+  printf '%s\n' "$skill legacy duplicate" > "$home/.codex/skills/$skill/SKILL.md"
+done
+status="$(run_memoryctl status --json)"
+assert_contains "$status" '"status": "partial"'
+assert_contains "$status" '"duplicate_codex_skill_count": 7'
+status="$(run_memoryctl refresh --json)"
+assert_contains "$status" '"status": "enabled"'
+assert_contains "$status" '"duplicate_codex_skill_count": 0'
+assert_contains "$status" '"archived_duplicate_codex_skill_count": 7'
+for skill in "${managed_skills[@]}" graph-search; do
+  test ! -e "$home/.codex/skills/$skill" || fail "refresh left duplicate codex skill active: $skill"
+  test -f "$home/.codex/skills/.disabled/lark-memory-cli-duplicates/$skill/SKILL.md" || fail "refresh did not archive codex duplicate: $skill"
+done
+
+rm -rf "$home/.agents/skills/memory-graph-search"
 status="$(run_memoryctl refresh --json)"
 assert_contains "$status" '"status": "enabled"'
 test -f "$home/.agents/skills/memory-graph-search/SKILL.md" || fail "refresh did not restore missing active agents graph search skill"
-test -f "$home/.codex/skills/memory-graph-search/SKILL.md" || fail "refresh did not restore missing active codex graph search skill"
 
 printf '%s\n' 'memory skill v2' > "$source_dir/skills/lark-memory/SKILL.md"
 printf '%s\n' 'graph search skill v2' > "$source_dir/skills/memory-graph-search/SKILL.md"
 status="$(run_memoryctl enable --json)"
 assert_contains "$status" '"status": "enabled"'
 grep -Fq 'memory skill v2' "$home/.agents/skills/lark-memory/SKILL.md" || fail "enable did not refresh active agents memory skill"
-grep -Fq 'memory skill v2' "$home/.codex/skills/lark-memory/SKILL.md" || fail "enable did not refresh active codex memory skill"
 grep -Fq 'graph search skill v2' "$home/.agents/skills/memory-graph-search/SKILL.md" || fail "enable did not refresh active agents graph search skill"
-grep -Fq 'graph search skill v2' "$home/.codex/skills/memory-graph-search/SKILL.md" || fail "enable did not refresh active codex graph search skill"
 
 mkdir -p "$source_dir/skills/future-memory-skill"
 printf '%s\n' 'future memory skill v1' > "$source_dir/skills/future-memory-skill/SKILL.md"
@@ -86,7 +97,7 @@ printf '%s\n' "${managed_skills[@]}" 'future-memory-skill' > "$source_dir/skills
 status="$(run_memoryctl refresh --json)"
 assert_contains "$status" '"status": "enabled"'
 test -f "$home/.agents/skills/future-memory-skill/SKILL.md" || fail "refresh did not discover future agents skill from manifest"
-test -f "$home/.codex/skills/future-memory-skill/SKILL.md" || fail "refresh did not discover future codex skill from manifest"
+test ! -e "$home/.codex/skills/future-memory-skill" || fail "refresh duplicated future skill into codex root"
 
 status="$(run_memoryctl disable --json)"
 assert_contains "$status" '"status": "disabled"'
@@ -96,16 +107,12 @@ test ! -e "$home/.agents/skills/lark-memory" || fail "agents memory skill still 
 test ! -e "$home/.agents/skills/memory-graph-search" || fail "agents graph search skill still active after disable"
 test -f "$home/.agents/skills/.disabled/lark-memory/SKILL.md" || fail "agents memory skill was not disabled"
 test -f "$home/.agents/skills/.disabled/memory-graph-search/SKILL.md" || fail "agents graph search skill was not disabled"
-test -f "$home/.codex/skills/.disabled/lark-memory/SKILL.md" || fail "codex memory skill was not disabled"
-test -f "$home/.codex/skills/.disabled/memory-graph-search/SKILL.md" || fail "codex graph search skill was not disabled"
 
-rm -rf "$home/.agents/skills/.disabled/memory-graph-search" "$home/.codex/skills/.disabled/memory-graph-search"
+rm -rf "$home/.agents/skills/.disabled/memory-graph-search"
 status="$(run_memoryctl refresh --json)"
 assert_contains "$status" '"status": "disabled"'
 test -f "$home/.agents/skills/.disabled/memory-graph-search/SKILL.md" || fail "refresh did not restore missing disabled agents graph search skill"
-test -f "$home/.codex/skills/.disabled/memory-graph-search/SKILL.md" || fail "refresh did not restore missing disabled codex graph search skill"
 test ! -e "$home/.agents/skills/memory-graph-search" || fail "refresh re-enabled disabled agents graph search skill"
-test ! -e "$home/.codex/skills/memory-graph-search" || fail "refresh re-enabled disabled codex graph search skill"
 
 status="$(run_memoryctl enable --json)"
 assert_contains "$status" '"status": "enabled"'
@@ -117,3 +124,17 @@ test ! -e "$home/.agents/skills/lark-memory" || fail "agents memory skill still 
 test ! -e "$home/.agents/skills/memory-graph-search" || fail "agents graph search skill still active after --skills-only"
 test -f "$home/.agents/skills/.disabled/lark-memory/SKILL.md" || fail "agents memory skill was not disabled by --skills-only"
 test -f "$home/.agents/skills/.disabled/memory-graph-search/SKILL.md" || fail "agents graph search skill was not disabled by --skills-only"
+
+legacy_home="$tmp/legacy-home"
+mkdir -p "$legacy_home/.codex/skills/.disabled/lark-memory"
+printf '%s\n' 'legacy disabled memory' > "$legacy_home/.codex/skills/.disabled/lark-memory/SKILL.md"
+legacy_status="$(
+  HOME="$legacy_home" \
+  LARK_CLI_MEMORY_DIR="$source_dir" \
+  LARK_CLI_PREFIX="$tmp/legacy-prefix" \
+  PATH="$tmp/legacy-prefix/bin:$PATH" \
+  bash "$repo_root/scripts/memoryctl.sh" refresh --json
+)"
+assert_contains "$legacy_status" '"status": "disabled"'
+test -f "$legacy_home/.agents/skills/.disabled/memory-list/SKILL.md" || fail "legacy codex disabled state did not carry to canonical agents root"
+test ! -e "$legacy_home/.agents/skills/memory-list" || fail "legacy codex disabled state was re-enabled"
