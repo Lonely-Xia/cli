@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - **memory update**: Discover Homebrew Cellar Go installations, reject Go versions older than 1.23, and keep `GO_BIN` as the highest-priority override.
 - **memory update**: Add a one-command legacy-upgrade bootstrap plus state-preserving `memoryctl refresh`, and load managed skills from a source manifest so newly added skills are not omitted.
 - **skills**: Add five `memory-*` command selectors while keeping the underlying CLI commands and the `lark-memory` umbrella router unchanged.
+- **skills**: Install portable Memory skills only in `~/.agents/skills` and archive legacy `~/.codex/skills` duplicates so Codex renders one selector entry per command.
 
 ## graphcli-v1.0.0 - 2026-09-14
 

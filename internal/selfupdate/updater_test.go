@@ -170,8 +170,15 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(codexActive, "SKILL.md"), []byte("memory-v1"), 0o644); err != nil {
 		t.Fatalf("write old active codex skill: %v", err)
 	}
+	codexGraphActive := filepath.Join(home, ".codex", "skills", "memory-graph-search")
+	if err := os.MkdirAll(codexGraphActive, 0o755); err != nil {
+		t.Fatalf("mkdir active codex graph skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codexGraphActive, "SKILL.md"), []byte("graph-search-v1"), 0o644); err != nil {
+		t.Fatalf("write old active codex graph skill: %v", err)
+	}
 
-	synced, warning := syncMemorySkillsPreservingState(sourceDir)
+	synced, archived, warning := syncMemorySkillsPreservingState(sourceDir)
 	if warning != "" {
 		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
 	}
@@ -184,23 +191,32 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "memory-graph-search")); !os.IsNotExist(err) {
 		t.Fatalf("agents graph search skill was enabled unexpectedly: %v", err)
 	}
-	assertFileContent(t, filepath.Join(codexActive, "SKILL.md"), "memory-v2")
-	codexGraphActive := filepath.Join(home, ".codex", "skills", "memory-graph-search")
-	assertFileContent(t, filepath.Join(codexGraphActive, "SKILL.md"), "graph-search-v2")
+	if _, err := os.Stat(codexActive); !os.IsNotExist(err) {
+		t.Fatalf("duplicate codex memory skill still active: %v", err)
+	}
+	if _, err := os.Stat(codexGraphActive); !os.IsNotExist(err) {
+		t.Fatalf("duplicate codex graph skill still active: %v", err)
+	}
+	archiveRoot := filepath.Join(home, ".codex", "skills", ".disabled", "lark-memory-cli-duplicates")
+	archivedMemory := filepath.Join(archiveRoot, "lark-memory")
+	archivedGraph := filepath.Join(archiveRoot, "memory-graph-search")
+	assertFileContent(t, filepath.Join(archivedMemory, "SKILL.md"), "memory-v1")
+	assertFileContent(t, filepath.Join(archivedGraph, "SKILL.md"), "graph-search-v1")
 	assertFileContent(t, filepath.Join(home, ".agents", "skills", "lark-shared", "SKILL.md"), "shared-v2")
-	assertFileContent(t, filepath.Join(home, ".codex", "skills", "lark-shared", "SKILL.md"), "shared-v2")
 
 	wantSynced := []string{
 		agentsDisabled,
 		agentsGraphDisabled,
 		filepath.Join(home, ".agents", "skills", "lark-shared"),
-		codexActive,
-		codexGraphActive,
-		filepath.Join(home, ".codex", "skills", "lark-shared"),
 	}
 	for _, want := range wantSynced {
 		if !containsString(synced, want) {
 			t.Fatalf("synced = %#v, missing %q", synced, want)
+		}
+	}
+	for _, want := range []string{archivedMemory, archivedGraph} {
+		if !containsString(archived, want) {
+			t.Fatalf("archived = %#v, missing %q", archived, want)
 		}
 	}
 }
@@ -215,6 +231,39 @@ func TestReadManagedMemorySkillsRejectsInvalidManifest(t *testing.T) {
 	}
 }
 
+func TestSyncMemorySkillsPreservesLegacyCodexDisabledState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sourceDir := t.TempDir()
+	writeTestSkill(t, sourceDir, "lark-memory", "memory-v2")
+	writeTestSkill(t, sourceDir, "memory-list", "list-v2")
+	writeTestSkill(t, sourceDir, "lark-shared", "shared-v2")
+	writeManagedMemorySkillsManifest(t, sourceDir, "lark-memory", "memory-list")
+
+	legacyDisabled := filepath.Join(home, ".codex", "skills", ".disabled", "lark-memory")
+	if err := os.MkdirAll(legacyDisabled, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDisabled, "SKILL.md"), []byte("memory-v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, archived, warning := syncMemorySkillsPreservingState(sourceDir)
+	if warning != "" {
+		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
+	}
+	if len(archived) != 0 {
+		t.Fatalf("archived = %#v, want none for already disabled codex copy", archived)
+	}
+	agentsDisabled := filepath.Join(home, ".agents", "skills", ".disabled")
+	assertFileContent(t, filepath.Join(agentsDisabled, "lark-memory", "SKILL.md"), "memory-v2")
+	assertFileContent(t, filepath.Join(agentsDisabled, "memory-list", "SKILL.md"), "list-v2")
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "lark-memory")); !os.IsNotExist(err) {
+		t.Fatalf("legacy disabled state was re-enabled: %v", err)
+	}
+	assertFileContent(t, filepath.Join(legacyDisabled, "SKILL.md"), "memory-v1")
+}
+
 func TestSyncMemorySkillsDiscoversNewManifestEntry(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -225,17 +274,50 @@ func TestSyncMemorySkillsDiscoversNewManifestEntry(t *testing.T) {
 	writeTestSkill(t, sourceDir, "lark-shared", "shared")
 	writeManagedMemorySkillsManifest(t, sourceDir, "lark-memory", "memory-graph-search", "future-memory-skill")
 
-	synced, warning := syncMemorySkillsPreservingState(sourceDir)
+	synced, archived, warning := syncMemorySkillsPreservingState(sourceDir)
 	if warning != "" {
 		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
 	}
-	for _, root := range []string{filepath.Join(home, ".agents", "skills"), filepath.Join(home, ".codex", "skills")} {
-		future := filepath.Join(root, "future-memory-skill")
-		assertFileContent(t, filepath.Join(future, "SKILL.md"), "future")
-		if !containsString(synced, future) {
-			t.Fatalf("synced = %#v, missing dynamically managed skill %q", synced, future)
-		}
+	if len(archived) != 0 {
+		t.Fatalf("archived = %#v, want none", archived)
 	}
+	future := filepath.Join(home, ".agents", "skills", "future-memory-skill")
+	assertFileContent(t, filepath.Join(future, "SKILL.md"), "future")
+	if !containsString(synced, future) {
+		t.Fatalf("synced = %#v, missing dynamically managed skill %q", synced, future)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "skills", "future-memory-skill")); !os.IsNotExist(err) {
+		t.Fatalf("future skill was duplicated into codex root: %v", err)
+	}
+}
+
+func TestArchiveCodexMemorySkillDuplicatesPreservesExistingArchive(t *testing.T) {
+	home := t.TempDir()
+	active := filepath.Join(home, ".codex", "skills", "memory-list")
+	existingArchive := filepath.Join(home, ".codex", "skills", ".disabled", "lark-memory-cli-duplicates", "memory-list")
+	if err := os.MkdirAll(active, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(existingArchive, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(active, "SKILL.md"), []byte("active-copy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(existingArchive, "SKILL.md"), []byte("old-archive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	archived, warnings := archiveCodexMemorySkillDuplicates(home, []string{"memory-list"})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	want := existingArchive + ".1"
+	if len(archived) != 1 || archived[0] != want {
+		t.Fatalf("archived = %#v, want [%q]", archived, want)
+	}
+	assertFileContent(t, filepath.Join(existingArchive, "SKILL.md"), "old-archive")
+	assertFileContent(t, filepath.Join(want, "SKILL.md"), "active-copy")
 }
 
 func TestMemoryGoBinaryCandidatesIncludeCellarBeforePath(t *testing.T) {
