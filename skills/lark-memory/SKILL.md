@@ -28,11 +28,12 @@ metadata:
 
 ## 命令路由
 
-- 用户显式选择 `memory-list`、`memory-get`、`memory-graph-query`、`memory-graph-one-hop` 或
+- 用户显式选择 `memory-list`、`memory-get`、`memory-graph-range`、`memory-graph-one-hop` 或
   `memory-graph-search` 时，优先遵循对应的命令 skill；本 skill 仅作为总路由和共享契约。
 - 查询可见 memory 或读取 memory 快照、偏好、长期上下文：使用 `+list` / `+get`。
-- 仅当用户明确要求查询历史 Memory Graph 节点或边时使用 `memory +graph-query`；不得用
+- 仅当用户明确要求查询历史 Memory Graph 节点或边时使用 `memory +graph-range`；不得用
   `+list` / `+get` 替代 Graph 查询。
+- `memory +graph-query` 已移除；所有调用必须使用 `memory +graph-range`。
 - 已知可靠的 NodeType + RootID，需要沿 Graph 查看直接关联内容时使用 `memory +graph-one-hop`；
   不得用 SourceID 猜 RootID，不得由 CLI 自动循环多跳。
 - 用户选择 `memory-graph-search` 或输入 `memory graph search <query>` 时，改用独立的
@@ -73,7 +74,7 @@ lark-memory-cli memory +get --memory-key <memory_key> --payload-mode metadata --
 | 列出可见 memory | `lark-memory-cli memory +list --as user --format json` |
 | 获取 memory 详情 | `lark-memory-cli memory +get --memory-key <key> --as user --format json` |
 | 获取指定 variant | `lark-memory-cli memory +get --memory-key <key> --variant-key <variant> --as user --format json` |
-| 查询历史 Graph | `lark-memory-cli memory +graph-query --start-time-sec <start> --end-time-sec <end> --as user --format ndjson` |
+| 查询历史 Graph | `lark-memory-cli memory +graph-range --start-time-sec <start> --end-time-sec <end> --as user --format ndjson` |
 | 查询一跳关系 | `lark-memory-cli memory +graph-one-hop --root '<node_type>:<root_id>' --hop <1-5> --as user --format json` |
 | 调试请求结构 | 在上述命令后追加 `--dry-run` |
 

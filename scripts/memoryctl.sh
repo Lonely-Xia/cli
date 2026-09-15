@@ -12,7 +12,8 @@ DISABLED_BIN_DIR="$PREFIX/bin/.disabled"
 DISABLED_WRAPPER="$DISABLED_BIN_DIR/lark-memory-cli"
 MANAGED_SKILLS_FILE="$SOURCE_DIR/skills/memory-managed-skills.txt"
 MANAGED_SKILLS=()
-LEGACY_MEMORY_SKILLS=("graph-search")
+LEGACY_MEMORY_SKILLS=("graph-search" "memory-graph-query")
+RETIRED_AGENT_SKILLS=("memory-graph-query")
 SHARED_SKILL="lark-shared"
 SKILL_LABELS=("agents")
 SKILL_ROOTS=("$HOME/.agents/skills")
@@ -21,6 +22,9 @@ CODEX_SKILL_ROOT="$HOME/.codex/skills"
 CODEX_DUPLICATE_ARCHIVE_ROOT="$CODEX_SKILL_ROOT/.disabled/lark-memory-cli-duplicates"
 CODEX_DUPLICATES=()
 ARCHIVED_CODEX_DUPLICATES=()
+AGENT_RETIRED_ARCHIVE_ROOT="$HOME/.agents/skills/.disabled/lark-memory-cli-retired"
+ACTIVE_RETIRED_AGENT_SKILLS=()
+ARCHIVED_RETIRED_AGENT_SKILLS=()
 
 usage() {
   cat <<'EOF'
@@ -290,12 +294,13 @@ refresh_skill_root() {
   ensure_shared_skill "$root"
 }
 
-next_duplicate_archive_path() {
-  local skill="$1"
+next_skill_archive_path() {
+  local archive_root="$1"
+  local skill="$2"
   local suffix=0
   local candidate
   while ((suffix < 1000)); do
-    candidate="$CODEX_DUPLICATE_ARCHIVE_ROOT/$skill"
+    candidate="$archive_root/$skill"
     ((suffix == 0)) || candidate="$candidate.$suffix"
     if [[ ! -e "$candidate" ]]; then
       printf '%s\n' "$candidate"
@@ -303,7 +308,11 @@ next_duplicate_archive_path() {
     fi
     suffix=$((suffix + 1))
   done
-  fail "no available duplicate skill archive path for $skill under $CODEX_DUPLICATE_ARCHIVE_ROOT"
+  fail "no available skill archive path for $skill under $archive_root"
+}
+
+next_duplicate_archive_path() {
+  next_skill_archive_path "$CODEX_DUPLICATE_ARCHIVE_ROOT" "$1"
 }
 
 archive_codex_duplicate() {
@@ -330,6 +339,28 @@ collect_codex_duplicates() {
   local skill
   for skill in "${MANAGED_SKILLS[@]}" "${LEGACY_MEMORY_SKILLS[@]}"; do
     [[ ! -e "$CODEX_SKILL_ROOT/$skill" ]] || CODEX_DUPLICATES+=("$CODEX_SKILL_ROOT/$skill")
+  done
+}
+
+archive_retired_agent_skills() {
+  ARCHIVED_RETIRED_AGENT_SKILLS=()
+  local skill active target
+  for skill in "${RETIRED_AGENT_SKILLS[@]}"; do
+    active="$HOME/.agents/skills/$skill"
+    [[ -e "$active" ]] || continue
+    target="$(next_skill_archive_path "$AGENT_RETIRED_ARCHIVE_ROOT" "$skill")"
+    mkdir -p "$(dirname "$target")"
+    mv "$active" "$target"
+    ARCHIVED_RETIRED_AGENT_SKILLS+=("$target")
+  done
+}
+
+collect_retired_agent_skills() {
+  ACTIVE_RETIRED_AGENT_SKILLS=()
+  local skill active
+  for skill in "${RETIRED_AGENT_SKILLS[@]}"; do
+    active="$HOME/.agents/skills/$skill"
+    [[ ! -e "$active" ]] || ACTIVE_RETIRED_AGENT_SKILLS+=("$active")
   done
 }
 
@@ -363,7 +394,7 @@ overall_status() {
     [[ "$state" == "conflict" ]] && conflict_count=$((conflict_count + 1))
   done
 
-  if [[ "$wrapper_state" == "conflict" || "$conflict_count" -gt 0 || ${#CODEX_DUPLICATES[@]} -gt 0 ]]; then
+  if [[ "$wrapper_state" == "conflict" || "$conflict_count" -gt 0 || ${#CODEX_DUPLICATES[@]} -gt 0 || ${#ACTIVE_RETIRED_AGENT_SKILLS[@]} -gt 0 ]]; then
     printf 'partial'
   elif [[ "$wrapper_state" == "active" && "$app_exists" == "true" && "$active_count" -eq "$expected_count" ]]; then
     printf 'enabled'
@@ -399,6 +430,7 @@ print_status_text() {
   commit="$(source_commit)"
   collect_skill_states
   collect_codex_duplicates
+  collect_retired_agent_skills
   status="$(overall_status "$wrapper_state" "$app_exists" "${SKILL_STATES[@]}")"
 
   printf 'lark-memory status: %s\n\n' "$status"
@@ -425,6 +457,15 @@ print_status_text() {
     printf '\narchived duplicate Codex skills:\n'
     printf '  %s\n' "${ARCHIVED_CODEX_DUPLICATES[@]}"
   fi
+  if [[ ${#ACTIVE_RETIRED_AGENT_SKILLS[@]} -gt 0 ]]; then
+    printf '\nretired Agent selectors still active:\n'
+    printf '  %s\n' "${ACTIVE_RETIRED_AGENT_SKILLS[@]}"
+    printf '  run memoryctl refresh to archive these retired selector entries\n'
+  fi
+  if [[ ${#ARCHIVED_RETIRED_AGENT_SKILLS[@]} -gt 0 ]]; then
+    printf '\narchived retired Agent selectors:\n'
+    printf '  %s\n' "${ARCHIVED_RETIRED_AGENT_SKILLS[@]}"
+  fi
   printf '\n'
   printf 'source:\n'
   printf '  dir:    %s\n' "$SOURCE_DIR"
@@ -447,6 +488,7 @@ print_status_json() {
   commit="$(source_commit)"
   collect_skill_states
   collect_codex_duplicates
+  collect_retired_agent_skills
   status="$(overall_status "$wrapper_state" "$app_exists" "${SKILL_STATES[@]}")"
 
   printf '{\n'
@@ -464,6 +506,9 @@ print_status_json() {
   printf '  "duplicate_codex_skill_count": %d,\n' "${#CODEX_DUPLICATES[@]}"
   printf '  "archived_duplicate_codex_skill_count": %d,\n' "${#ARCHIVED_CODEX_DUPLICATES[@]}"
   printf '  "duplicate_archive_root": "%s",\n' "$(json_escape "$CODEX_DUPLICATE_ARCHIVE_ROOT")"
+  printf '  "active_retired_agent_skill_count": %d,\n' "${#ACTIVE_RETIRED_AGENT_SKILLS[@]}"
+  printf '  "archived_retired_agent_skill_count": %d,\n' "${#ARCHIVED_RETIRED_AGENT_SKILLS[@]}"
+  printf '  "retired_agent_skill_archive_root": "%s",\n' "$(json_escape "$AGENT_RETIRED_ARCHIVE_ROOT")"
   printf '  "skills": {\n'
   local i j skill state_index=0
   for ((i = 0; i < ${#SKILL_ROOTS[@]}; i++)); do
@@ -531,6 +576,7 @@ case "$cmd" in
     print_status
     ;;
   enable)
+    archive_retired_agent_skills
     archive_codex_duplicates
     enable_wrapper
     for root in "${SKILL_ROOTS[@]}"; do
@@ -539,6 +585,7 @@ case "$cmd" in
     print_status
     ;;
   refresh)
+    archive_retired_agent_skills
     archive_codex_duplicates
     refresh_wrapper
     for root in "${SKILL_ROOTS[@]}"; do
@@ -547,6 +594,7 @@ case "$cmd" in
     print_status
     ;;
   disable)
+    archive_retired_agent_skills
     archive_codex_duplicates
     for root in "${SKILL_ROOTS[@]}"; do
       disable_skill_root "$root"

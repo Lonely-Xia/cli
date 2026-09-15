@@ -16,9 +16,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// TestMemoryGraphQueryLive verifies an authenticated, read-only Graph query.
+// TestMemoryGraphRangeLive verifies an authenticated, read-only Graph range command.
 // It intentionally asserts only the success envelope, never graph contents.
-func TestMemoryGraphQueryLive(t *testing.T) {
+func TestMemoryGraphRangeLive(t *testing.T) {
 	if os.Getenv("TEST_USER_ACCESS_TOKEN") == "" {
 		clie2e.SkipWithoutUserToken(t)
 	}
@@ -30,7 +30,7 @@ func TestMemoryGraphQueryLive(t *testing.T) {
 
 	result, err := clie2e.RunCmd(ctx, clie2e.Request{
 		Args: []string{
-			"memory", "+graph-query",
+			"memory", "+graph-range",
 			"--start-time-sec", strconv.FormatInt(startTimeSec, 10),
 			"--end-time-sec", strconv.FormatInt(endTimeSec, 10),
 		},
@@ -41,10 +41,10 @@ func TestMemoryGraphQueryLive(t *testing.T) {
 	if result.ExitCode != 0 {
 		t.Fatal(memoryGraphLiveFailureDetails(result.Stderr))
 	}
-	require.True(t, gjson.Valid(result.Stdout), "Memory Graph query must return JSON")
-	require.True(t, gjson.Get(result.Stdout, "ok").Exists(), "Memory Graph query JSON must include ok")
-	require.True(t, gjson.Get(result.Stdout, "ok").Bool(), "Memory Graph query JSON must report success")
-	require.True(t, gjson.Get(result.Stdout, "data").Exists(), "Memory Graph query JSON must include data")
+	require.True(t, gjson.Valid(result.Stdout), "Memory Graph range must return JSON")
+	require.True(t, gjson.Get(result.Stdout, "ok").Exists(), "Memory Graph range JSON must include ok")
+	require.True(t, gjson.Get(result.Stdout, "ok").Bool(), "Memory Graph range JSON must report success")
+	require.True(t, gjson.Get(result.Stdout, "data").Exists(), "Memory Graph range JSON must include data")
 }
 
 func memoryGraphLiveFailureDetails(stderr string) string {

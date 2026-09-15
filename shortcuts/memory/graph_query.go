@@ -19,11 +19,12 @@ import (
 
 const graphQueryPath = memoryAPIBasePath + "/graph_query"
 
-// MemoryGraphQuery plans graph queries in one request per 24-hour window.
-var MemoryGraphQuery = common.Shortcut{
+// MemoryGraphRange queries an explicit graph time range in one request per
+// 24-hour window. The underlying OpenAPI remains GraphQuery.
+var MemoryGraphRange = common.Shortcut{
 	Service:     memoryService,
-	Command:     "+graph-query",
-	Description: "Query Memory Graph data with per-day streaming output",
+	Command:     "+graph-range",
+	Description: "Query Memory Graph data within an explicit time range",
 	Risk:        "read",
 	Scopes:      []string{memoryScope},
 	AuthTypes:   []string{"user"},
@@ -113,14 +114,14 @@ func validateGraphQueryInput(detailFormat, startTimeSec, endTimeSec, jqExpr, for
 		return graphQuerySpec{}, err
 	}
 	if jqExpr != "" {
-		return graphQuerySpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument, "--jq is not supported for memory +graph-query").
+		return graphQuerySpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument, "--jq is not supported for memory +graph-range").
 			WithParam("--jq")
 	}
 	switch format {
 	case "json", "ndjson", "pretty":
 		return spec, nil
 	default:
-		return graphQuerySpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument, "--format must be json, ndjson, or pretty for memory +graph-query").
+		return graphQuerySpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument, "--format must be json, ndjson, or pretty for memory +graph-range").
 			WithParam("--format")
 	}
 }

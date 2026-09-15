@@ -32,7 +32,7 @@ func TestMemoryGraphOneHopLive(t *testing.T) {
 	t.Cleanup(discoveryCancel)
 	discovery, err := clie2e.RunCmd(discoveryCtx, clie2e.Request{
 		Args: []string{
-			"memory", "+graph-query",
+			"memory", "+graph-range",
 			"--start-time-sec", strconv.FormatInt(startTimeSec, 10),
 			"--end-time-sec", strconv.FormatInt(endTimeSec, 10),
 		},

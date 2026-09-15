@@ -34,6 +34,7 @@ var (
 	memoryGoReadDir        = vfs.ReadDir
 	memoryGoVersionPattern = regexp.MustCompile(`\bgo(\d+)\.(\d+)`)
 	memorySkillNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	memoryRetiredSkills    = []string{"memory-graph-query"}
 )
 
 // MemoryUpdateOptions describes a lark-memory-cli source-install update.
@@ -356,8 +357,12 @@ func syncMemorySkillsPreservingState(sourceDir string) ([]string, []string, stri
 	}
 	synced, rootWarnings := syncMemorySkillRootPreservingState(sourceDir, root, managedSkills, legacyPrimaryState)
 	warnings = append(warnings, rootWarnings...)
+	archived, retiredWarnings := archiveRetiredAgentMemorySkills(home, memoryRetiredSkills)
+	warnings = append(warnings, retiredWarnings...)
 	duplicateSkills := append(append([]string(nil), managedSkills...), "graph-search")
-	archived, archiveWarnings := archiveCodexMemorySkillDuplicates(home, duplicateSkills)
+	duplicateSkills = append(duplicateSkills, memoryRetiredSkills...)
+	codexArchived, archiveWarnings := archiveCodexMemorySkillDuplicates(home, duplicateSkills)
+	archived = append(archived, codexArchived...)
 	warnings = append(warnings, archiveWarnings...)
 	return synced, archived, strings.Join(warnings, "; ")
 }
@@ -365,6 +370,16 @@ func syncMemorySkillsPreservingState(sourceDir string) ([]string, []string, stri
 func archiveCodexMemorySkillDuplicates(home string, skills []string) ([]string, []string) {
 	root := filepath.Join(home, ".codex", "skills")
 	archiveRoot := filepath.Join(root, ".disabled", "lark-memory-cli-duplicates")
+	return archiveMemorySkillCopies(root, archiveRoot, skills)
+}
+
+func archiveRetiredAgentMemorySkills(home string, skills []string) ([]string, []string) {
+	root := filepath.Join(home, ".agents", "skills")
+	archiveRoot := filepath.Join(root, ".disabled", "lark-memory-cli-retired")
+	return archiveMemorySkillCopies(root, archiveRoot, skills)
+}
+
+func archiveMemorySkillCopies(root, archiveRoot string, skills []string) ([]string, []string) {
 	seen := make(map[string]struct{}, len(skills))
 	var archived []string
 	var warnings []string

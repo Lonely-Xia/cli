@@ -114,7 +114,7 @@ func TestRegisterShortcutsMountsGraphCommandsUnderMemory(t *testing.T) {
 	program := &cobra.Command{Use: "root"}
 	RegisterShortcuts(program, newRegisterTestFactory(t))
 
-	for _, name := range []string{"+graph-query", "+graph-one-hop", "+graph-search"} {
+	for _, name := range []string{"+graph-range", "+graph-one-hop", "+graph-search"} {
 		command, remaining, err := program.Find([]string{"memory", name})
 		if err != nil || command == nil || len(remaining) != 0 {
 			t.Fatalf("find memory %s: command=%#v remaining=%v err=%v", name, command, remaining, err)
@@ -135,6 +135,10 @@ func TestRegisterShortcutsMountsGraphCommandsUnderMemory(t *testing.T) {
 		if !command.Hidden {
 			t.Fatalf("compatibility alias %v must be hidden", path)
 		}
+	}
+
+	if command, _, err := program.Find([]string{"memory", "+graph-query"}); err == nil && command != nil && command.Name() == "+graph-query" {
+		t.Fatal("removed memory +graph-query command must not be registered")
 	}
 }
 

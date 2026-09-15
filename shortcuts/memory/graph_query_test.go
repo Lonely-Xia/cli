@@ -29,25 +29,25 @@ import (
 	"code.byted.org/lark_search/larksuite-cli/shortcuts/common"
 )
 
-func TestMemoryGraphQueryRegistered(t *testing.T) {
+func TestMemoryGraphRangeRegistered(t *testing.T) {
 	got := Shortcuts()
 	if len(got) != 6 {
 		t.Fatalf("len(Shortcuts()) = %d, want 6", len(got))
 	}
-	want := []string{"+list", "+get", "+graph-query", "+graph-one-hop", "+graph-search", "+one-hop"}
+	want := []string{"+list", "+get", "+graph-range", "+graph-one-hop", "+graph-search", "+one-hop"}
 	for index := range want {
 		if got[index].Command != want[index] {
 			t.Fatalf("commands[%d] = %q, want %q", index, got[index].Command, want[index])
 		}
 	}
-	if MemoryGraphQuery.Hidden || MemoryGraphOneHop.Hidden || MemoryGraphSearch.Hidden || !MemoryOneHop.Hidden {
+	if MemoryGraphRange.Hidden || MemoryGraphOneHop.Hidden || MemoryGraphSearch.Hidden || !MemoryOneHop.Hidden {
 		t.Fatalf("canonical/compat metadata is inconsistent")
 	}
 }
 
-func TestMemoryGraphQueryDoesNotExposeUserIDFlag(t *testing.T) {
+func TestMemoryGraphRangeDoesNotExposeUserIDFlag(t *testing.T) {
 	parent := &cobra.Command{Use: "memory"}
-	MemoryGraphQuery.Mount(parent, &cmdutil.Factory{})
+	MemoryGraphRange.Mount(parent, &cmdutil.Factory{})
 	cmd := parent.Commands()[0]
 
 	if flag := cmd.Flags().Lookup("user-id"); flag != nil {
@@ -55,10 +55,10 @@ func TestMemoryGraphQueryDoesNotExposeUserIDFlag(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryRejectsLegacyUserIDFlag(t *testing.T) {
+func TestMemoryGraphRangeRejectsLegacyUserIDFlag(t *testing.T) {
 	f, stdout, _, _ := cmdutil.TestFactory(t, memoryTestConfig(t))
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--dry-run", "--as", "user",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--dry-run", "--as", "user",
 		"--user-id", "ou_legacy_target",
 	}, f, stdout)
 	if err == nil || !strings.Contains(err.Error(), "unknown flag: --user-id") {
@@ -69,17 +69,17 @@ func TestMemoryGraphQueryRejectsLegacyUserIDFlag(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryOnlySupportsUserIdentity(t *testing.T) {
-	if want := []string{"user"}; !reflect.DeepEqual(MemoryGraphQuery.AuthTypes, want) {
-		t.Fatalf("AuthTypes = %#v, want %#v", MemoryGraphQuery.AuthTypes, want)
+func TestMemoryGraphRangeOnlySupportsUserIdentity(t *testing.T) {
+	if want := []string{"user"}; !reflect.DeepEqual(MemoryGraphRange.AuthTypes, want) {
+		t.Fatalf("AuthTypes = %#v, want %#v", MemoryGraphRange.AuthTypes, want)
 	}
 
 	config := memoryTestConfig(t)
 	// Keep both identities available so --as bot reaches the shortcut AuthTypes gate.
 	config.SupportedIdentities = 3
 	f, stdout, _, _ := cmdutil.TestFactory(t, config)
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--dry-run", "--as", "bot",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--dry-run", "--as", "bot",
 	}, f, stdout)
 	var validation *errs.ValidationError
 	if !errors.As(err, &validation) {
@@ -93,7 +93,7 @@ func TestMemoryGraphQueryOnlySupportsUserIdentity(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryRequiresAuthenticatedSelfOpenID(t *testing.T) {
+func TestMemoryGraphRangeRequiresAuthenticatedSelfOpenID(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		userOpenID string
@@ -106,8 +106,8 @@ func TestMemoryGraphQueryRequiresAuthenticatedSelfOpenID(t *testing.T) {
 			config.UserOpenId = tc.userOpenID
 			f, stdout, _, _ := cmdutil.TestFactory(t, config)
 
-			err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-				"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--dry-run", "--as", "user",
+			err := runMemoryShortcut(t, MemoryGraphRange, []string{
+				"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--dry-run", "--as", "user",
 			}, f, stdout)
 			var authErr *errs.AuthenticationError
 			if !errors.As(err, &authErr) {
@@ -124,7 +124,7 @@ func TestMemoryGraphQueryRequiresAuthenticatedSelfOpenID(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryDryRunShape(t *testing.T) {
+func TestMemoryGraphRangeDryRunShape(t *testing.T) {
 	cases := []struct {
 		name string
 		s    common.Shortcut
@@ -133,8 +133,8 @@ func TestMemoryGraphQueryDryRunShape(t *testing.T) {
 	}{
 		{
 			name: "graph query plans every window",
-			s:    MemoryGraphQuery,
-			args: []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "86501", "--dry-run", "--as", "user"},
+			s:    MemoryGraphRange,
+			args: []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "86501", "--dry-run", "--as", "user"},
 			want: []string{"graph_query", "ou_graph_test_user", "markdown", "86500", "86501"},
 		},
 	}
@@ -155,7 +155,7 @@ func TestMemoryGraphQueryDryRunShape(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryDryRunPlansEveryWindow(t *testing.T) {
+func TestMemoryGraphRangeDryRunPlansEveryWindow(t *testing.T) {
 	cases := []struct {
 		name             string
 		detailFormatFlag string
@@ -170,11 +170,11 @@ func TestMemoryGraphQueryDryRunPlansEveryWindow(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f, stdout, _, _ := cmdutil.TestFactory(t, memoryTestConfig(t))
-			args := []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "86501", "--dry-run", "--as", "user"}
+			args := []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "86501", "--dry-run", "--as", "user"}
 			if tc.detailFormatFlag != "" {
 				args = append(args, "--detail-format", tc.detailFormatFlag)
 			}
-			if err := runMemoryShortcut(t, MemoryGraphQuery, args, f, stdout); err != nil {
+			if err := runMemoryShortcut(t, MemoryGraphRange, args, f, stdout); err != nil {
 				t.Fatalf("dry-run: %v", err)
 			}
 
@@ -213,9 +213,9 @@ func TestMemoryGraphQueryDryRunPlansEveryWindow(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryPreflightReturnsTypedErrorWhenNormalizationWritebackFails(t *testing.T) {
+func TestMemoryGraphRangePreflightReturnsTypedErrorWhenNormalizationWritebackFails(t *testing.T) {
 	setErr := errors.New("set detail format failed")
-	cmd := &cobra.Command{Use: "+graph-query"}
+	cmd := &cobra.Command{Use: "+graph-range"}
 	cmd.Flags().Var(&rejectingGraphStringValue{value: " markdown ", err: setErr}, "detail-format", "")
 	cmd.Flags().String("start-time-sec", "100", "")
 	cmd.Flags().String("end-time-sec", "101", "")
@@ -241,7 +241,7 @@ func (v *rejectingGraphStringValue) String() string   { return v.value }
 func (v *rejectingGraphStringValue) Type() string     { return "string" }
 func (v *rejectingGraphStringValue) Set(string) error { return v.err }
 
-func TestMemoryGraphQueryValidation(t *testing.T) {
+func TestMemoryGraphRangeValidation(t *testing.T) {
 	cases := []struct {
 		name  string
 		args  []string
@@ -249,27 +249,27 @@ func TestMemoryGraphQueryValidation(t *testing.T) {
 	}{
 		{
 			name:  "rejects jq",
-			args:  []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--jq", ".data", "--as", "user"},
+			args:  []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--jq", ".data", "--as", "user"},
 			param: "--jq",
 		},
 		{
 			name:  "rejects jq with ndjson",
-			args:  []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--jq", ".data", "--format", "ndjson", "--as", "user"},
+			args:  []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--jq", ".data", "--format", "ndjson", "--as", "user"},
 			param: "--jq",
 		},
 		{
 			name:  "rejects jq with pretty",
-			args:  []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--jq", ".data", "--format", "pretty", "--as", "user"},
+			args:  []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--jq", ".data", "--format", "pretty", "--as", "user"},
 			param: "--jq",
 		},
 		{
 			name:  "rejects table format",
-			args:  []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--format", "table", "--as", "user"},
+			args:  []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--format", "table", "--as", "user"},
 			param: "--format",
 		},
 		{
 			name:  "rejects csv format",
-			args:  []string{"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--format", "csv", "--as", "user"},
+			args:  []string{"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--format", "csv", "--as", "user"},
 			param: "--format",
 		},
 	}
@@ -277,7 +277,7 @@ func TestMemoryGraphQueryValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f, stdout, _, _ := cmdutil.TestFactory(t, memoryTestConfig(t))
-			err := runMemoryShortcut(t, MemoryGraphQuery, tc.args, f, stdout)
+			err := runMemoryShortcut(t, MemoryGraphRange, tc.args, f, stdout)
 			var validation *errs.ValidationError
 			if !errors.As(err, &validation) {
 				t.Fatalf("expected validation error, got %T: %v", err, err)
@@ -289,7 +289,7 @@ func TestMemoryGraphQueryValidation(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryPreflightReportsMissingRequiredFlag(t *testing.T) {
+func TestMemoryGraphRangePreflightReportsMissingRequiredFlag(t *testing.T) {
 	cases := []struct {
 		name  string
 		args  []string
@@ -297,12 +297,12 @@ func TestMemoryGraphQueryPreflightReportsMissingRequiredFlag(t *testing.T) {
 	}{
 		{
 			name:  "missing start time",
-			args:  []string{"+graph-query", "--end-time-sec", "101", "--dry-run"},
+			args:  []string{"+graph-range", "--end-time-sec", "101", "--dry-run"},
 			param: "--start-time-sec",
 		},
 		{
 			name:  "missing end time",
-			args:  []string{"+graph-query", "--start-time-sec", "100", "--dry-run"},
+			args:  []string{"+graph-range", "--start-time-sec", "100", "--dry-run"},
 			param: "--end-time-sec",
 		},
 	}
@@ -310,7 +310,7 @@ func TestMemoryGraphQueryPreflightReportsMissingRequiredFlag(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f, stdout, _, _ := cmdutil.TestFactory(t, nil)
-			err := runMemoryShortcut(t, MemoryGraphQuery, tc.args, f, stdout)
+			err := runMemoryShortcut(t, MemoryGraphRange, tc.args, f, stdout)
 			problem, ok := errs.ProblemOf(err)
 			if !ok || problem.Category != errs.CategoryValidation {
 				t.Fatalf("problem = %#v, ok = %v; want validation", problem, ok)
@@ -332,9 +332,9 @@ func TestMemoryGraphQueryPreflightReportsMissingRequiredFlag(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryPreflightRejectsOversizedRangeBeforeDependencies(t *testing.T) {
+func TestMemoryGraphRangePreflightRejectsOversizedRangeBeforeDependencies(t *testing.T) {
 	err, stdout, calls := runGraphPreflightWithDependencyProbe(t, []string{
-		"+graph-query",
+		"+graph-range",
 		"--start-time-sec", "100",
 		"--end-time-sec", "604901",
 		"--dry-run",
@@ -342,7 +342,7 @@ func TestMemoryGraphQueryPreflightRejectsOversizedRangeBeforeDependencies(t *tes
 	assertGraphPreflightValidation(t, err, stdout, calls, "--end-time-sec")
 }
 
-func TestMemoryGraphQueryPreflightRejectsInvalidDetailFormatBeforeDependencies(t *testing.T) {
+func TestMemoryGraphRangePreflightRejectsInvalidDetailFormatBeforeDependencies(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		formatArgs []string
@@ -352,7 +352,7 @@ func TestMemoryGraphQueryPreflightRejectsInvalidDetailFormatBeforeDependencies(t
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			args := []string{
-				"+graph-query",
+				"+graph-range",
 				"--start-time-sec", "100",
 				"--end-time-sec", "101",
 				"--dry-run",
@@ -376,7 +376,7 @@ func runGraphPreflightWithDependencyProbe(t *testing.T, args []string) (error, s
 	t.Helper()
 	f, stdout, _, _ := cmdutil.TestFactory(t, nil)
 	parent := &cobra.Command{Use: "memory", SilenceErrors: true, SilenceUsage: true}
-	MemoryGraphQuery.Mount(parent, f)
+	MemoryGraphRange.Mount(parent, f)
 
 	var calls graphPreflightDependencyCalls
 	f.Config = func() (*core.CliConfig, error) {
@@ -442,7 +442,7 @@ func (r *countingGraphTokenResolver) ResolveToken(context.Context, credential.To
 	return nil, errors.New("token must not be called")
 }
 
-func TestMemoryGraphQueryExecuteOneWindowEmitsOneEnvelope(t *testing.T) {
+func TestMemoryGraphRangeExecuteOneWindowEmitsOneEnvelope(t *testing.T) {
 	f, stdout, _, reg := memoryGraphTestFactory(t)
 	stub := graphQueryStub(
 		graphNode("node-only-window", "source-only-window", 100),
@@ -450,8 +450,8 @@ func TestMemoryGraphQueryExecuteOneWindowEmitsOneEnvelope(t *testing.T) {
 	)
 	reg.Register(stub)
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "ndjson",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "ndjson",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -485,15 +485,15 @@ func TestMemoryGraphQueryExecuteOneWindowEmitsOneEnvelope(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryExecuteStreamsWindowsChronologically(t *testing.T) {
+func TestMemoryGraphRangeExecuteStreamsWindowsChronologically(t *testing.T) {
 	f, stdout, _, reg := memoryGraphTestFactory(t)
 	first := graphQueryStubForWindow(100, 86500, graphNode("node-first", "source-first", 100), graphEdge("edge-first", "node-first", "node-next", 101))
 	second := graphQueryStubForWindow(86500, 86501, graphNode("node-second", "source-second", 86500), graphEdge("edge-second", "node-second", "node-last", 86501))
 	reg.Register(first)
 	reg.Register(second)
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", "json",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", "json",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -534,7 +534,7 @@ func TestMemoryGraphQueryExecuteStreamsWindowsChronologically(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryStopsAfterFailureAndPreservesTypedError(t *testing.T) {
+func TestMemoryGraphRangeStopsAfterFailureAndPreservesTypedError(t *testing.T) {
 	const (
 		messageSentinel = "sentinel-private-graph-message"
 		hintSentinel    = "sentinel-private-graph-detail"
@@ -564,8 +564,8 @@ func TestMemoryGraphQueryStopsAfterFailureAndPreservesTypedError(t *testing.T) {
 	reg.Register(failure)
 	reg.Register(third)
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "172901", "--as", "user", "--format", "json",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "172901", "--as", "user", "--format", "json",
 	}, f, stdout)
 	if err == nil {
 		t.Fatal("execute error = nil, want middle-window API error")
@@ -610,7 +610,7 @@ func TestMemoryGraphQueryStopsAfterFailureAndPreservesTypedError(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryMalformedResponseRedactsBody(t *testing.T) {
+func TestMemoryGraphRangeMalformedResponseRedactsBody(t *testing.T) {
 	const sentinel = "sentinel-private-node-detail"
 	f, stdout, stderr, reg := memoryGraphTestFactory(t)
 	stub := &httpmock.Stub{
@@ -621,8 +621,8 @@ func TestMemoryGraphQueryMalformedResponseRedactsBody(t *testing.T) {
 	}
 	reg.Register(stub)
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
 	}, f, stdout)
 	problem, ok := errs.ProblemOf(err)
 	if !ok {
@@ -651,7 +651,7 @@ func TestMemoryGraphQueryMalformedResponseRedactsBody(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryHTTPErrorRedactsBody(t *testing.T) {
+func TestMemoryGraphRangeHTTPErrorRedactsBody(t *testing.T) {
 	tests := []struct {
 		name      string
 		status    int
@@ -678,8 +678,8 @@ func TestMemoryGraphQueryHTTPErrorRedactsBody(t *testing.T) {
 			}
 			reg.Register(stub)
 
-			err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-				"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
+			err := runMemoryShortcut(t, MemoryGraphRange, []string{
+				"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
 			}, f, stdout)
 			problem, ok := errs.ProblemOf(err)
 			if !ok {
@@ -707,7 +707,7 @@ func TestMemoryGraphQueryHTTPErrorRedactsBody(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryTransportErrorRedactsMountedStderr(t *testing.T) {
+func TestMemoryGraphRangeTransportErrorRedactsMountedStderr(t *testing.T) {
 	const sentinel = "sentinel-private-graph-transport"
 	cause := errors.New(sentinel)
 	f, stdout, stderr, _ := memoryGraphTestFactory(t)
@@ -723,8 +723,8 @@ func TestMemoryGraphQueryTransportErrorRedactsMountedStderr(t *testing.T) {
 	)
 	f.LarkClient = func() (*lark.Client, error) { return sdk, nil }
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
 	}, f, stdout)
 	problem, ok := errs.ProblemOf(err)
 	if !ok {
@@ -750,7 +750,7 @@ func TestMemoryGraphQueryTransportErrorRedactsMountedStderr(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryDialFailureMakesThreeSingleTransportAttempts(t *testing.T) {
+func TestMemoryGraphRangeDialFailureMakesThreeSingleTransportAttempts(t *testing.T) {
 	const sentinelText = "sentinel-private-graph-dial"
 	sentinelErr := errors.New(sentinelText)
 	transport := &graphDialFailureTransport{cause: sentinelErr}
@@ -769,8 +769,8 @@ func TestMemoryGraphQueryDialFailureMakesThreeSingleTransportAttempts(t *testing
 	f.HttpClient = func() (*http.Client, error) { return httpClient, nil }
 	f.LarkClient = func() (*lark.Client, error) { return sdk, nil }
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "json",
 	}, f, stdout)
 	var networkErr *errs.NetworkError
 	if !errors.As(err, &networkErr) {
@@ -796,7 +796,7 @@ func TestMemoryGraphQueryDialFailureMakesThreeSingleTransportAttempts(t *testing
 	}
 }
 
-func TestMemoryGraphQueryRetriesCode2200AndStreamsFinalSuccess(t *testing.T) {
+func TestMemoryGraphRangeRetriesCode2200AndStreamsFinalSuccess(t *testing.T) {
 	f, stdout, _, reg := memoryGraphTestFactory(t)
 	failures := make([]*httpmock.Stub, 0, 2)
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -819,8 +819,8 @@ func TestMemoryGraphQueryRetriesCode2200AndStreamsFinalSuccess(t *testing.T) {
 	)
 	reg.Register(success)
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "ndjson",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "101", "--as", "user", "--format", "ndjson",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -940,7 +940,7 @@ func TestAnnotateGraphWindowErrorPreservesTypedErrors(t *testing.T) {
 	})
 }
 
-func TestMemoryGraphQueryStopsAfterOutputFailure(t *testing.T) {
+func TestMemoryGraphRangeStopsAfterOutputFailure(t *testing.T) {
 	for _, format := range []string{"json", "pretty"} {
 		t.Run(format, func(t *testing.T) {
 			f, _, _, reg := memoryGraphTestFactory(t)
@@ -953,8 +953,8 @@ func TestMemoryGraphQueryStopsAfterOutputFailure(t *testing.T) {
 			writeErr := errors.New(sentinelText)
 			writer := &graphFailWriter{err: writeErr}
 			f.IOStreams.Out = writer
-			err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-				"+graph-query", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", format,
+			err := runMemoryShortcut(t, MemoryGraphRange, []string{
+				"+graph-range", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", format,
 			}, f, nil)
 			if !errors.Is(err, writeErr) {
 				t.Fatalf("error = %T %v, want preserved write cause", err, err)
@@ -985,7 +985,7 @@ func TestMemoryGraphQueryStopsAfterOutputFailure(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryCancellationDuringSafetyScanStopsRendering(t *testing.T) {
+func TestMemoryGraphRangeCancellationDuringSafetyScanStopsRendering(t *testing.T) {
 	t.Setenv("LARKSUITE_CLI_CONTENT_SAFETY_MODE", "warn")
 	previous := extcs.GetProvider()
 	t.Cleanup(func() { extcs.Register(previous) })
@@ -999,8 +999,8 @@ func TestMemoryGraphQueryCancellationDuringSafetyScanStopsRendering(t *testing.T
 	reg.Register(first)
 	reg.Register(second)
 
-	err := runMemoryShortcutContext(t, ctx, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", "json",
+	err := runMemoryShortcutContext(t, ctx, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", "json",
 	}, f, stdout)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %T %v, want context.Canceled preserved through annotation", err, err)
@@ -1019,19 +1019,19 @@ func TestMemoryGraphQueryCancellationDuringSafetyScanStopsRendering(t *testing.T
 	}
 }
 
-func TestMemoryGraphQueryContentSafetyBlockStopsRendering(t *testing.T) {
+func TestMemoryGraphRangeContentSafetyBlockStopsRendering(t *testing.T) {
 	original := extcs.GetProvider()
 	sentinel := &memoryGraphSafetyProvider{}
 	extcs.Register(sentinel)
 	t.Cleanup(func() { extcs.Register(original) })
 
-	t.Run("block", testMemoryGraphQueryContentSafetyBlockStopsRendering)
+	t.Run("block", testMemoryGraphRangeContentSafetyBlockStopsRendering)
 	if got := extcs.GetProvider(); got != sentinel {
 		t.Fatalf("content-safety provider after subtest = %T %p, want exact %T %p", got, got, sentinel, sentinel)
 	}
 }
 
-func testMemoryGraphQueryContentSafetyBlockStopsRendering(t *testing.T) {
+func testMemoryGraphRangeContentSafetyBlockStopsRendering(t *testing.T) {
 	t.Setenv("LARKSUITE_CLI_CONTENT_SAFETY_MODE", "block")
 	previous := extcs.GetProvider()
 	extcs.Register(&memoryGraphSafetyProvider{alert: &extcs.Alert{Provider: "test", MatchedRules: []string{"graph-detail"}}})
@@ -1043,8 +1043,8 @@ func testMemoryGraphQueryContentSafetyBlockStopsRendering(t *testing.T) {
 	reg.Register(first)
 	reg.Register(second)
 
-	err := runMemoryShortcut(t, MemoryGraphQuery, []string{
-		"+graph-query", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", "json",
+	err := runMemoryShortcut(t, MemoryGraphRange, []string{
+		"+graph-range", "--start-time-sec", "100", "--end-time-sec", "86501", "--as", "user", "--format", "json",
 	}, f, stdout)
 	var safetyErr *errs.ContentSafetyError
 	if !errors.As(err, &safetyErr) {
@@ -1058,7 +1058,7 @@ func testMemoryGraphQueryContentSafetyBlockStopsRendering(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryPrettyRendering(t *testing.T) {
+func TestMemoryGraphRangePrettyRendering(t *testing.T) {
 	out := graphWindowResult{
 		WindowIndex:  1,
 		StartTimeSec: 100,
@@ -1099,7 +1099,7 @@ func TestMemoryGraphQueryPrettyRendering(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryPrettyHandlesMalformedOptionalFields(t *testing.T) {
+func TestMemoryGraphRangePrettyHandlesMalformedOptionalFields(t *testing.T) {
 	out := graphWindowResult{
 		WindowIndex:  2,
 		StartTimeSec: 86500,
@@ -1138,7 +1138,7 @@ func TestMemoryGraphQueryPrettyHandlesMalformedOptionalFields(t *testing.T) {
 	}
 }
 
-func TestMemoryGraphQueryGraphScalarUsesDecodedRepresentationsOnly(t *testing.T) {
+func TestMemoryGraphRangeGraphScalarUsesDecodedRepresentationsOnly(t *testing.T) {
 	tests := []struct {
 		name   string
 		value  interface{}
