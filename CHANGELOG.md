@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- **memory**: Rename the public time-window command and selector to `memory +graph-range` and `memory-graph-range`; remove `memory +graph-query` and retire the old selector during upgrades.
+
 ### Fixed
 
 - **memory update**: Discover Homebrew Cellar Go installations, reject Go versions older than 1.23, and keep `GO_BIN` as the highest-priority override.

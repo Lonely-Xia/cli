@@ -248,6 +248,7 @@ func doMemorySourceUpdate(opts *UpdateOptions, io *cmdutil.IOStreams, cur string
 			out["skills_synced"] = result.SkillsSynced
 		}
 		if len(result.SkillsArchived) > 0 {
+			out["skills_archived"] = result.SkillsArchived
 			out["duplicate_skills_action"] = "archived"
 			out["duplicate_skills_archived"] = result.SkillsArchived
 		}
@@ -281,7 +282,7 @@ func doMemorySourceUpdate(opts *UpdateOptions, io *cmdutil.IOStreams, cur string
 		fmt.Fprintf(io.ErrOut, "  Skills:  synced %d skill directories\n", len(result.SkillsSynced))
 	}
 	if len(result.SkillsArchived) > 0 {
-		fmt.Fprintf(io.ErrOut, "  Skills:  archived %d duplicate Codex skill directories\n", len(result.SkillsArchived))
+		fmt.Fprintf(io.ErrOut, "  Skills:  archived %d retired or duplicate skill directories\n", len(result.SkillsArchived))
 	}
 	if result.SkillsWarning != "" {
 		fmt.Fprintf(io.ErrOut, "%s Skills sync warning: %s\n", symWarn(), result.SkillsWarning)
@@ -309,6 +310,7 @@ func writeMemorySourceUpgradeNotes(io *cmdutil.IOStreams) {
 func memorySourceUpgradeNotes() []string {
 	return []string{
 		"Agent 读取 Memory 时优先选择 agentic_v1 版本；没有 agentic_v1 时回退到 default_variant_key。",
+		"时间范围图命令和选择器已更名为 graph-range；旧 graph-query 命令已移除。",
 	}
 }
 

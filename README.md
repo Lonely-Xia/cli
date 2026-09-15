@@ -5,7 +5,7 @@ shortcuts：
 
 - `lark-memory-cli memory +list`
 - `lark-memory-cli memory +get`
-- `lark-memory-cli memory +graph-query`
+- `lark-memory-cli memory +graph-range`
 - `lark-memory-cli memory +graph-one-hop`
 - `lark-memory-cli memory +graph-search`
 
@@ -90,9 +90,10 @@ export LARKSUITE_CLI_CONFIG_DIR="$HOME/.config/lark-memory-cli"
 ```
 
 安装脚本会把总路由 `lark-memory` 和五个命令选择器 `memory-list`、`memory-get`、
-`memory-graph-query`、`memory-graph-one-hop`、`memory-graph-search` 同步到
+`memory-graph-range`、`memory-graph-one-hop`、`memory-graph-search` 同步到
 `$HOME/.agents/skills`。Codex 和其它兼容 Agent 都从这个共享目录发现这些便携 skills，避免同时
 写入 `$HOME/.codex/skills` 后在选择器中重复展示。
+升级时会归档旧的 `memory-graph-query` 选择器，避免新旧名称同时展示。
 如果目标目录缺少 `lark-shared`，会补一份作为依赖。Codex/Agent 的 skill 列表通常在会话
 启动时加载；安装后命令立即可用，但新 skill 要出现在选择器里，需要重启或新开会话。
 
@@ -228,11 +229,11 @@ lark-memory-cli memory +get --as user \
 
 ## 查询 Memory Graph 历史数据
 
-`memory +graph-query` 仅支持查询当前登录用户的历史 Memory Graph 节点或边，请求体中的
+`memory +graph-range` 仅支持查询当前登录用户的历史 Memory Graph 节点或边，请求体中的
 `user_id` 会自动使用登录态的 `open_id`。
 
 ```bash
-lark-memory-cli memory +graph-query --as user \
+lark-memory-cli memory +graph-range --as user \
   --start-time-sec 1784476800 \
   --end-time-sec 1785081600 \
   --detail-format markdown \
@@ -248,6 +249,8 @@ lark-memory-cli memory +graph-query --as user \
 - `--end-time-sec`：必填，不包含边界的 Unix 秒结束时间。
 - `--detail-format`：Graph 详情格式，支持 `markdown`（默认）和 `json`。
 - `--format`：输出格式，支持 `json`、`ndjson` 和 `pretty`；不支持 `table`、`csv` 和 `--jq`。
+
+旧命令 `memory +graph-query` 已移除；调用方需要迁移到 `memory +graph-range`。
 
 ## 查询 Memory Graph 一跳关系
 

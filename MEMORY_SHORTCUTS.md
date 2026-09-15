@@ -4,7 +4,7 @@
 
 - `lark-memory-cli memory +list`
 - `lark-memory-cli memory +get`
-- `lark-memory-cli memory +graph-query`
+- `lark-memory-cli memory +graph-range`
 - `lark-memory-cli memory +graph-one-hop`
 - `lark-memory-cli memory +graph-search`
 
@@ -77,8 +77,9 @@ lark-memory-cli --version
 - 直接执行 `go build`，实际二进制默认放到 `$HOME/.local/libexec/lark-memory-cli/lark-cli`。
 - 安装 `$HOME/.lark-cli-memory/bin/memoryctl`，并用它生成 `$HOME/.local/bin/lark-memory-cli` wrapper。
 - 同步总路由 `lark-memory` 和五个命令选择器：`memory-list`、`memory-get`、
-  `memory-graph-query`、`memory-graph-one-hop`、`memory-graph-search`；统一安装到
+  `memory-graph-range`、`memory-graph-one-hop`、`memory-graph-search`；统一安装到
   `$HOME/.agents/skills`，不再同时写入 `$HOME/.codex/skills`。
+- 归档旧的 `memory-graph-query` 选择器，避免升级后新旧名称同时展示。
 - 如果目标 skill root 下还没有 `lark-shared`，会同步一份 `lark-shared` 作为
   `lark-memory` 的依赖。
 - 向 `~/.zshrc` 写入 `$HOME/.local/bin` 到 `PATH`。
@@ -259,7 +260,7 @@ lark-memory-cli memory +get --as user \
 
 ## 查询 Memory Graph 历史数据
 
-仅在需要查询**当前登录用户**的历史 Memory Graph 节点或边时使用 `memory +graph-query`。该命令
+仅在需要查询**当前登录用户**的历史 Memory Graph 节点或边时使用 `memory +graph-range`。该命令
 只支持本人查询：请求体中的 `user_id` 会自动使用登录态的 `open_id`，不接受 UID、不会做
 UID/open_id 转换，也不依赖通讯录，不能查询其他用户。
 
@@ -270,7 +271,7 @@ lark-memory-cli auth login --scope "memory:hub"
 ```
 
 ```bash
-lark-memory-cli memory +graph-query --as user \
+lark-memory-cli memory +graph-range --as user \
   --start-time-sec 1784476800 \
   --end-time-sec 1785081600 \
   --detail-format markdown \
@@ -288,6 +289,8 @@ Graph 流式输出支持 `json`、`ndjson` 和 `pretty`；`table`、`csv` 与 `-
 脚本和 Agent 推荐使用 `--format ndjson`，逐行消费完整 JSON。最早失败窗口重试耗尽后，
 只保留它之前连续成功窗口的有效输出；后续窗口即使已经请求成功也不会渲染。整个命令仍然失败，
 消费者必须检查进程退出状态，不能仅凭已有 stdout 判定全范围成功。
+
+旧命令 `memory +graph-query` 已移除；调用方需要迁移到 `memory +graph-range`。
 
 追加 `--dry-run` 会生成全部窗口请求计划，唯一硬保证是不会执行 Graph API 请求；命令仍会加载
 身份和配置，并尝试 token/scope 预检，dry-run 成功不代表真实 Graph 请求一定可用。

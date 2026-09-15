@@ -221,6 +221,56 @@ func TestSyncMemorySkillsPreservingStateKeepsDisabledSkill(t *testing.T) {
 	}
 }
 
+func TestSyncMemorySkillsRenamesGraphQuerySelector(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sourceDir := t.TempDir()
+	writeTestSkill(t, sourceDir, "lark-memory", "memory-v2")
+	writeTestSkill(t, sourceDir, "memory-graph-range", "graph-range-v1")
+	writeTestSkill(t, sourceDir, "lark-shared", "shared-v2")
+	writeManagedMemorySkillsManifest(t, sourceDir, "lark-memory", "memory-graph-range")
+
+	agentsLegacy := filepath.Join(home, ".agents", "skills", "memory-graph-query")
+	if err := os.MkdirAll(agentsLegacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsLegacy, "SKILL.md"), []byte("old-query-selector"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	codexLegacy := filepath.Join(home, ".codex", "skills", "memory-graph-query")
+	if err := os.MkdirAll(codexLegacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codexLegacy, "SKILL.md"), []byte("old-query-duplicate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	synced, archived, warning := syncMemorySkillsPreservingState(sourceDir)
+	if warning != "" {
+		t.Fatalf("syncMemorySkillsPreservingState() warning = %q", warning)
+	}
+	rangeSkill := filepath.Join(home, ".agents", "skills", "memory-graph-range")
+	assertFileContent(t, filepath.Join(rangeSkill, "SKILL.md"), "graph-range-v1")
+	if !containsString(synced, rangeSkill) {
+		t.Fatalf("synced = %#v, missing %q", synced, rangeSkill)
+	}
+	if _, err := os.Stat(agentsLegacy); !os.IsNotExist(err) {
+		t.Fatalf("retired Agent selector remains active: %v", err)
+	}
+	if _, err := os.Stat(codexLegacy); !os.IsNotExist(err) {
+		t.Fatalf("retired Codex selector remains active: %v", err)
+	}
+	agentsArchive := filepath.Join(home, ".agents", "skills", ".disabled", "lark-memory-cli-retired", "memory-graph-query")
+	codexArchive := filepath.Join(home, ".codex", "skills", ".disabled", "lark-memory-cli-duplicates", "memory-graph-query")
+	assertFileContent(t, filepath.Join(agentsArchive, "SKILL.md"), "old-query-selector")
+	assertFileContent(t, filepath.Join(codexArchive, "SKILL.md"), "old-query-duplicate")
+	for _, want := range []string{agentsArchive, codexArchive} {
+		if !containsString(archived, want) {
+			t.Fatalf("archived = %#v, missing %q", archived, want)
+		}
+	}
+}
+
 func TestReadManagedMemorySkillsRejectsInvalidManifest(t *testing.T) {
 	sourceDir := t.TempDir()
 	writeTestSkill(t, sourceDir, "lark-memory", "memory")

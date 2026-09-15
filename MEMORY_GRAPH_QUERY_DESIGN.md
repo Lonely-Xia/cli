@@ -1,4 +1,4 @@
-# Memory Graph Query 项目说明
+# Memory Graph Range 命令项目说明
 
 ## 1. 背景
 
@@ -13,7 +13,7 @@ POST /open-apis/search/v2/memory_hub/graph_query
 已完成的数据。
 
 本项目在 `jhn_memory` 分支已有的 Memory shortcut、用户身份、`memory:hub` scope、PPE header、
-结构化错误和内容安全能力之上提供 `memory +graph-query`。
+结构化错误和内容安全能力之上提供 `memory +graph-range`。
 
 ## 2. 最终目标
 
@@ -39,7 +39,7 @@ POST /open-apis/search/v2/memory_hub/graph_query
 ## 4. 命令接口
 
 ```text
-lark-cli memory +graph-query \
+lark-cli memory +graph-range \
   --start-time-sec <int64> \
   --end-time-sec <int64> \
   [--detail-format markdown|json] \
@@ -48,6 +48,7 @@ lark-cli memory +graph-query \
 ```
 
 `lark-memory-cli` 专用入口使用相同参数和行为。
+旧命令 `memory +graph-query` 不再注册；调用方必须迁移到 `memory +graph-range`。
 
 参数约束：
 
@@ -214,6 +215,7 @@ timeout 和 temporary 分类；未标记的其他 CLI 请求保持 SDK 原有行
 - `shortcuts/memory/shortcuts.go`：注册 Graph shortcut 和 API 路径。
 - `README.md`、`MEMORY_SHORTCUTS.md`：用户命令、限制和输出说明。
 - `skills/lark-memory/SKILL.md`：Agent 使用契约和数据安全约束。
+- `skills/memory-graph-range/`：独立的 Agent 命令选择器。
 
 Graph 的时间窗口、重试和输出顺序保持在 `shortcuts/memory`，通用 runner 只提供业务无关的 preflight
 和单行流式 envelope 能力。

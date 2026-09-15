@@ -52,13 +52,13 @@ func TestMemoryDryRun(t *testing.T) {
 		require.Equal(t, "full", gjson.Get(result.Stdout, "api.0.body.payload_mode").String())
 	})
 
-	t.Run("graph query plans one window", func(t *testing.T) {
+	t.Run("graph range plans one window", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		t.Cleanup(cancel)
 
 		result, err := clie2e.RunCmd(ctx, clie2e.Request{
 			Args: []string{
-				"memory", "+graph-query",
+				"memory", "+graph-range",
 				"--start-time-sec", "1784476800",
 				"--end-time-sec", "1784563200",
 				"--dry-run",
@@ -72,13 +72,13 @@ func TestMemoryDryRun(t *testing.T) {
 		})
 	})
 
-	t.Run("graph query plans two exact-start windows", func(t *testing.T) {
+	t.Run("graph range plans two exact-start windows", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		t.Cleanup(cancel)
 
 		result, err := clie2e.RunCmd(ctx, clie2e.Request{
 			Args: []string{
-				"memory", "+graph-query",
+				"memory", "+graph-range",
 				"--start-time-sec", "100",
 				"--end-time-sec", "86501",
 				"--detail-format", "json",
@@ -194,7 +194,7 @@ func TestMemoryDryRun(t *testing.T) {
 
 			result, err := clie2e.RunCmd(ctx, clie2e.Request{
 				Args: []string{
-					"memory", "+graph-query",
+					"memory", "+graph-range",
 					"--start-time-sec", "100",
 					"--end-time-sec", "101",
 					"--detail-format", tc.detailFormatFlag,
@@ -217,7 +217,7 @@ func TestMemoryDryRun(t *testing.T) {
 
 		result, err := clie2e.RunCmd(ctx, clie2e.Request{
 			Args: []string{
-				"memory", "+graph-query",
+				"memory", "+graph-range",
 				"--start-time-sec", "100",
 				"--end-time-sec", "604901",
 				"--dry-run",
@@ -238,7 +238,7 @@ func TestMemoryDryRun(t *testing.T) {
 
 		result, err := clie2e.RunCmd(ctx, clie2e.Request{
 			Args: []string{
-				"memory", "+graph-query",
+				"memory", "+graph-range",
 				"--user-id", "ou_other_user",
 				"--start-time-sec", "100",
 				"--end-time-sec", "101",
@@ -265,7 +265,7 @@ func TestMemoryDryRun(t *testing.T) {
 			t.Cleanup(cancel)
 
 			args := []string{
-				"memory", "+graph-query",
+				"memory", "+graph-range",
 				"--start-time-sec", "100",
 				"--end-time-sec", "101",
 				"--dry-run",
@@ -288,12 +288,12 @@ func TestMemoryDryRun(t *testing.T) {
 	}{
 		{
 			name:  "graph query missing start time reports typed param",
-			args:  []string{"memory", "+graph-query", "--end-time-sec", "101", "--dry-run"},
+			args:  []string{"memory", "+graph-range", "--end-time-sec", "101", "--dry-run"},
 			param: "--start-time-sec",
 		},
 		{
 			name:  "graph query missing end time reports typed param",
-			args:  []string{"memory", "+graph-query", "--start-time-sec", "100", "--dry-run"},
+			args:  []string{"memory", "+graph-range", "--start-time-sec", "100", "--dry-run"},
 			param: "--end-time-sec",
 		},
 	} {

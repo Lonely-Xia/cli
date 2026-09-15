@@ -26,7 +26,7 @@ prefix="$tmp/prefix"
 home="$tmp/home"
 app_dir="$prefix/libexec/lark-memory-cli"
 
-managed_skills=("lark-memory" "memory-list" "memory-get" "memory-graph-query" "memory-graph-one-hop" "memory-graph-search")
+managed_skills=("lark-memory" "memory-list" "memory-get" "memory-graph-range" "memory-graph-one-hop" "memory-graph-search")
 mkdir -p "$source_dir/skills/lark-shared" "$app_dir" "$home"
 for skill in "${managed_skills[@]}"; do
   mkdir -p "$source_dir/skills/$skill"
@@ -56,25 +56,33 @@ if grep -Fq 'open.feishu-pre.cn' "$prefix/bin/lark-memory-cli"; then
 fi
 test -f "$home/.agents/skills/lark-memory/SKILL.md" || fail "agents memory skill was not enabled"
 test -f "$home/.agents/skills/memory-graph-search/SKILL.md" || fail "agents graph search skill was not enabled"
-for skill in memory-list memory-get memory-graph-query memory-graph-one-hop; do
+for skill in memory-list memory-get memory-graph-range memory-graph-one-hop; do
   test -f "$home/.agents/skills/$skill/SKILL.md" || fail "agents $skill selector was not enabled"
 done
 test -f "$home/.agents/skills/lark-shared/SKILL.md" || fail "agents shared skill was not installed"
 test ! -e "$home/.codex/skills/lark-memory" || fail "memory skill was duplicated into codex root"
 test ! -e "$home/.codex/skills/memory-graph-search" || fail "graph search skill was duplicated into codex root"
 
-for skill in "${managed_skills[@]}" graph-search; do
+mkdir -p "$home/.agents/skills/memory-graph-query"
+printf '%s\n' 'retired graph query selector' > "$home/.agents/skills/memory-graph-query/SKILL.md"
+
+for skill in "${managed_skills[@]}" graph-search memory-graph-query; do
   mkdir -p "$home/.codex/skills/$skill"
   printf '%s\n' "$skill legacy duplicate" > "$home/.codex/skills/$skill/SKILL.md"
 done
 status="$(run_memoryctl status --json)"
 assert_contains "$status" '"status": "partial"'
-assert_contains "$status" '"duplicate_codex_skill_count": 7'
+assert_contains "$status" '"duplicate_codex_skill_count": 8'
+assert_contains "$status" '"active_retired_agent_skill_count": 1'
 status="$(run_memoryctl refresh --json)"
 assert_contains "$status" '"status": "enabled"'
 assert_contains "$status" '"duplicate_codex_skill_count": 0'
-assert_contains "$status" '"archived_duplicate_codex_skill_count": 7'
-for skill in "${managed_skills[@]}" graph-search; do
+assert_contains "$status" '"archived_duplicate_codex_skill_count": 8'
+assert_contains "$status" '"active_retired_agent_skill_count": 0'
+assert_contains "$status" '"archived_retired_agent_skill_count": 1'
+test ! -e "$home/.agents/skills/memory-graph-query" || fail "refresh left retired graph query selector active"
+test -f "$home/.agents/skills/.disabled/lark-memory-cli-retired/memory-graph-query/SKILL.md" || fail "refresh did not archive retired graph query selector"
+for skill in "${managed_skills[@]}" graph-search memory-graph-query; do
   test ! -e "$home/.codex/skills/$skill" || fail "refresh left duplicate codex skill active: $skill"
   test -f "$home/.codex/skills/.disabled/lark-memory-cli-duplicates/$skill/SKILL.md" || fail "refresh did not archive codex duplicate: $skill"
 done

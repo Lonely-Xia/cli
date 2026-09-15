@@ -335,7 +335,7 @@ func TestUpdateMemorySourceHumanShowsReadableVersion(t *testing.T) {
 	if !strings.Contains(out, "Control: /home/me/.lark-cli-memory/bin/memoryctl") {
 		t.Errorf("expected Control line, got: %s", out)
 	}
-	if !strings.Contains(out, "archived 1 duplicate Codex skill directories") {
+	if !strings.Contains(out, "archived 1 retired or duplicate skill directories") {
 		t.Errorf("expected duplicate archive summary, got: %s", out)
 	}
 	if !strings.Contains(out, "升级点:") {
@@ -343,6 +343,9 @@ func TestUpdateMemorySourceHumanShowsReadableVersion(t *testing.T) {
 	}
 	if !strings.Contains(out, "Agent 读取 Memory 时优先选择 agentic_v1 版本；没有 agentic_v1 时回退到 default_variant_key。") {
 		t.Errorf("expected memory variant upgrade note, got: %s", out)
+	}
+	if !strings.Contains(out, "时间范围图命令和选择器已更名为 graph-range") {
+		t.Errorf("expected graph-range migration note, got: %s", out)
 	}
 }
 
