@@ -19,6 +19,8 @@ type graphSearchOutput struct {
 	Query             string                        `json:"query"`
 	SearchCandidates  []graphSearchCandidate        `json:"search_candidates"`
 	Roots             []graphSearchRoot             `json:"roots"`
+	NextRoots         []graphSearchRoot             `json:"next_roots"`
+	Continuation      graphSearchContinuation       `json:"continuation"`
 	Nodes             []map[string]interface{}      `json:"nodes"`
 	Edges             []map[string]interface{}      `json:"edges"`
 	SkippedCandidates []graphSearchSkippedCandidate `json:"skipped_candidates"`
@@ -26,6 +28,14 @@ type graphSearchOutput struct {
 	Hops              []graphSearchHopSummary       `json:"hops"`
 	Evidence          graphSearchEvidenceIndex      `json:"evidence"`
 	GraphQuery        graphSearchGraphQueryResult   `json:"graph_query"`
+}
+
+type graphSearchContinuation struct {
+	Mode                  string `json:"mode"`
+	RequiresModelDecision bool   `json:"requires_model_decision"`
+	NextRootCount         int    `json:"next_root_count"`
+	MaxTotalHops          int    `json:"max_total_hops"`
+	DecisionBasis         string `json:"decision_basis"`
 }
 
 func executeGraphSearch(rctx *common.RuntimeContext, spec graphSearchSpec) error {
@@ -90,13 +100,29 @@ func executeGraphSearch(rctx *common.RuntimeContext, spec graphSearchSpec) error
 		return graphQueryAsync.Err
 	}
 	graphQuery := graphQueryAsync.Result
+	nextTasks := append([]graphSearchTraversalRoot(nil), traversal.NextRoots...)
+	nextTasks = append(nextTasks, graphSearchGraphQueryRoots(graphQuery.Nodes)...)
+	nextTasks = filterGraphSearchCandidateRoots(nextTasks, traversal.ExpandedRoots)
+	nextRoots, _ := mergeGraphSearchRoots(nextTasks)
+	stopReason := traversal.StopReason
+	if len(nextRoots) > 0 {
+		stopReason = "agent_decision_required"
+	}
 	mergedNodes := mergeGraphSearchObjectSets(traversal.Nodes, graphQuery.Nodes, "node_id")
 	mergedEdges := mergeGraphSearchObjectSets(traversal.Edges, graphQuery.Edges, "edge_id")
 
 	out := graphSearchOutput{
-		Query:             spec.Query,
-		SearchCandidates:  nonNilGraphSearchCandidates(knowledge.Candidates),
-		Roots:             nonNilGraphSearchRoots(roots),
+		Query:            spec.Query,
+		SearchCandidates: nonNilGraphSearchCandidates(knowledge.Candidates),
+		Roots:            nonNilGraphSearchRoots(roots),
+		NextRoots:        nonNilGraphSearchRoots(nextRoots),
+		Continuation: graphSearchContinuation{
+			Mode:                  "agent_controlled",
+			RequiresModelDecision: len(nextRoots) > 0,
+			NextRootCount:         len(nextRoots),
+			MaxTotalHops:          graphOneHopMaxHop,
+			DecisionBasis:         "judge Query relevance, new evidence, unresolved aspects, and expansion value from node and edge Detail before every additional hop",
+		},
 		Nodes:             nonNilGraphSearchObjects(mergedNodes),
 		Edges:             nonNilGraphSearchObjects(mergedEdges),
 		SkippedCandidates: nonNilGraphSearchSkipped(skipped),
@@ -136,7 +162,7 @@ func executeGraphSearch(rctx *common.RuntimeContext, spec graphSearchSpec) error
 		GraphQueryCalled:            &graphQueryCalled,
 		GraphQueryWindowCount:       &graphQueryWindowCount,
 		GraphQueryFailedWindowCount: &graphQueryFailedWindowCount,
-		StopReason:                  traversal.StopReason,
+		StopReason:                  stopReason,
 	}
 
 	var renderErr error
@@ -148,9 +174,9 @@ func executeGraphSearch(rctx *common.RuntimeContext, spec graphSearchSpec) error
 
 func renderGraphSearchPretty(w io.Writer, out graphSearchOutput, meta *output.Meta) error {
 	if _, err := fmt.Fprintf(w,
-		"GraphSearch complete=%t hops=%d roots=%d nodes=%d edges=%d failed_batches=%d trace_id=%s\n",
+		"GraphSearch complete=%t hops=%d roots=%d next_roots=%d nodes=%d edges=%d failed_batches=%d trace_id=%s\n",
 		graphSearchMetaBool(meta.Complete), graphSearchMetaInt(meta.HopsExecuted), graphSearchMetaInt(meta.RootCount),
-		graphSearchMetaInt(meta.NodeCount), graphSearchMetaInt(meta.EdgeCount), graphSearchMetaInt(meta.FailedBatchCount), meta.TraceID,
+		len(out.NextRoots), graphSearchMetaInt(meta.NodeCount), graphSearchMetaInt(meta.EdgeCount), graphSearchMetaInt(meta.FailedBatchCount), meta.TraceID,
 	); err != nil {
 		return err
 	}

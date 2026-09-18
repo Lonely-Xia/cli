@@ -40,12 +40,17 @@ func TestGraphSearchMetadata(t *testing.T) {
 	if flag := mountedGraphSearchCommand(t).Flags().Lookup("user-id"); flag != nil {
 		t.Fatal("--user-id must not be exposed")
 	}
+	if flag := mountedGraphSearchCommand(t).Flags().Lookup("max-hops"); flag != nil {
+		t.Fatal("--max-hops must not be exposed; graph-search always performs the initial OneHop only")
+	}
+	if got := mountedGraphSearchCommand(t).Flags().Lookup("graph-query-mode").DefValue; got != "on" {
+		t.Fatalf("--graph-query-mode default = %q, want every query to attempt Graph recall", got)
+	}
 }
 
 func TestParseGraphSearchSpec(t *testing.T) {
 	spec, err := parseGraphSearchSpec(graphSearchInput{
 		Query:        " query ",
-		MaxHops:      3,
 		Concurrency:  8,
 		DetailFormat: " markdown ",
 		Format:       "json",
@@ -59,28 +64,27 @@ func TestParseGraphSearchSpec(t *testing.T) {
 	if spec.MemoryTTEnv != graphSearchDefaultTTEnv {
 		t.Fatalf("MemoryTTEnv = %q, want %q", spec.MemoryTTEnv, graphSearchDefaultTTEnv)
 	}
-	if spec.GraphQueryMode != graphSearchGraphQueryModeAuto || spec.GraphQueryLookbackDays != graphSearchGraphQueryDefaultDays {
+	if spec.GraphQueryMode != graphSearchGraphQueryModeOn || spec.GraphQueryLookbackDays != graphSearchGraphQueryDefaultDays {
 		t.Fatalf("GraphQuery defaults = mode:%q days:%d", spec.GraphQueryMode, spec.GraphQueryLookbackDays)
 	}
-	customInput := graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 8, DetailFormat: "markdown", Format: "json", MemoryTTEnv: "custom_graph_lane"}
+	customInput := graphSearchInput{Query: "q", Concurrency: 8, DetailFormat: "markdown", Format: "json", MemoryTTEnv: "custom_graph_lane"}
 	customSpec, err := parseGraphSearchSpec(customInput, "trace")
 	if err != nil || customSpec.MemoryTTEnv != "custom_graph_lane" {
 		t.Fatalf("custom MemoryTTEnv spec = %#v, err = %v", customSpec, err)
 	}
 
-	valid := graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 8, DetailFormat: "markdown", Format: "json"}
+	valid := graphSearchInput{Query: "q", Concurrency: 8, DetailFormat: "markdown", Format: "json"}
 	for _, tc := range []struct {
 		name  string
 		input graphSearchInput
 		param string
 	}{
-		{name: "empty query", input: graphSearchInput{MaxHops: 3, Concurrency: 8, DetailFormat: "markdown", Format: "json"}, param: "--query"},
-		{name: "too many hops", input: graphSearchInput{Query: "q", MaxHops: 4, Concurrency: 8, DetailFormat: "markdown", Format: "json"}, param: "--max-hops"},
-		{name: "bad concurrency", input: graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 0, DetailFormat: "markdown", Format: "json"}, param: "--concurrency"},
-		{name: "bad detail", input: graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 8, DetailFormat: "xml", Format: "json"}, param: "--detail-format"},
-		{name: "bad format", input: graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 8, DetailFormat: "json", Format: "ndjson"}, param: "--format"},
-		{name: "bad graph query mode", input: graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 8, DetailFormat: "json", Format: "json", GraphQueryMode: "bad", GraphQueryModeSet: true}, param: "--graph-query-mode"},
-		{name: "bad graph query lookback", input: graphSearchInput{Query: "q", MaxHops: 3, Concurrency: 8, DetailFormat: "json", Format: "json", GraphQueryLookbackSet: true}, param: "--graph-query-lookback-days"},
+		{name: "empty query", input: graphSearchInput{Concurrency: 8, DetailFormat: "markdown", Format: "json"}, param: "--query"},
+		{name: "bad concurrency", input: graphSearchInput{Query: "q", Concurrency: 0, DetailFormat: "markdown", Format: "json"}, param: "--concurrency"},
+		{name: "bad detail", input: graphSearchInput{Query: "q", Concurrency: 8, DetailFormat: "xml", Format: "json"}, param: "--detail-format"},
+		{name: "bad format", input: graphSearchInput{Query: "q", Concurrency: 8, DetailFormat: "json", Format: "ndjson"}, param: "--format"},
+		{name: "bad graph query mode", input: graphSearchInput{Query: "q", Concurrency: 8, DetailFormat: "json", Format: "json", GraphQueryMode: "bad", GraphQueryModeSet: true}, param: "--graph-query-mode"},
+		{name: "bad graph query lookback", input: graphSearchInput{Query: "q", Concurrency: 8, DetailFormat: "json", Format: "json", GraphQueryLookbackSet: true}, param: "--graph-query-lookback-days"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := parseGraphSearchSpec(tc.input, "trace")
@@ -131,6 +135,28 @@ func TestGraphSearchGraphQueryAutoDecisionAndPlan(t *testing.T) {
 	}
 	if enabled, reason := graphSearchGraphQueryDecision(graphSearchGraphQueryModeOff, "最近进展"); enabled || reason != "forced_off" {
 		t.Fatalf("forced-off decision = enabled:%t reason:%q", enabled, reason)
+	}
+}
+
+func TestGraphSearchGraphQueryRootsUseWindowAnchorWhenEventTimeMissing(t *testing.T) {
+	roots := graphSearchGraphQueryRoots([]map[string]interface{}{{
+		"node_id":    "doc-day-a",
+		"node_type":  int64(2),
+		"root_id":    "docA",
+		"graph_date": "2026-09-10",
+		"retrieved_via": []graphSearchRetrievalSource{{
+			Kind:         graphSearchRetrievalGraphQuery,
+			StartTimeSec: time.Date(2026, 9, 10, 0, 0, 0, 0, graphSearchLocation).Unix(),
+		}},
+	}})
+	if len(roots) != 1 || len(roots[0].SearchOrigins) != 1 {
+		t.Fatalf("roots = %#v", roots)
+	}
+	origin := roots[0].SearchOrigins[0]
+	if origin.CandidateSource != "graph_query.nodes" ||
+		origin.AnchorTimeSource != "graph_query.window.start_time_sec" ||
+		origin.AnchorTimeSec == 0 {
+		t.Fatalf("origin = %#v", origin)
 	}
 }
 
@@ -246,7 +272,7 @@ func TestGraphSearchDerivesBothUIDsFromVerifiedUAT(t *testing.T) {
 	registry.Register(oneHopStub)
 
 	err := runGraphSearchShortcut(t, []string{
-		"+graph-search", "--query", "身份转换", "--max-hops", "1", "--as", "user", "--format", "json",
+		"+graph-search", "--query", "身份转换", "--as", "user", "--format", "json",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -313,7 +339,7 @@ func (graphSearchFailingTokenResolver) ResolveToken(context.Context, credential.
 func TestGraphSearchDryRunRedactsUIDAndDescribesDynamicSteps(t *testing.T) {
 	f, stdout, _, _ := cmdutil.TestFactory(t, memoryTestConfig(t))
 	err := runGraphSearchShortcut(t, []string{
-		"+graph-search", "--query", "什么是知识问答", "--max-hops", "2", "--concurrency", "4", "--dry-run", "--as", "user",
+		"+graph-search", "--query", "什么是知识问答", "--concurrency", "4", "--dry-run", "--as", "user",
 	}, f, stdout)
 	if err != nil {
 		t.Fatalf("dry-run: %v", err)
@@ -336,8 +362,11 @@ func TestGraphSearchDryRunRedactsUIDAndDescribesDynamicSteps(t *testing.T) {
 		gjson.Get(got, "knowledge_qa_headers.Rpc-Transit-USER-ID").String() != "<from out_id_to_in_id_map>" {
 		t.Fatalf("UID placeholder missing: %s", got)
 	}
-	if gjson.Get(got, "dynamic_steps.#").Int() != 4 {
+	if gjson.Get(got, "dynamic_steps.#").Int() != 5 {
 		t.Fatalf("dynamic steps missing: %s", got)
+	}
+	if gjson.Get(got, "max_hops").Exists() {
+		t.Fatalf("dry-run must not expose a max_hops setting: %s", got)
 	}
 	if gjson.Get(got, "one_hop_tt_env").String() != graphSearchDefaultTTEnv {
 		t.Fatalf("Graph Search default lane missing: %s", got)
@@ -358,7 +387,7 @@ func TestGraphSearchDryRunUsesMemoryLaneOverride(t *testing.T) {
 	}
 }
 
-func TestGraphSearchExecutesThreeHopsAndMergesOrigins(t *testing.T) {
+func TestGraphSearchExecutesInitialHopAndMergesOrigins(t *testing.T) {
 	f, stdout, _, registry := cmdutil.TestFactory(t, memoryTestConfig(t))
 	graphDate := "2026-09-10"
 	anchor := time.Date(2026, 9, 10, 12, 0, 0, 0, graphSearchLocation).Unix()
@@ -403,18 +432,9 @@ func TestGraphSearchExecutesThreeHopsAndMergesOrigins(t *testing.T) {
 		graphSearchEdge("edge-a", "doc-day-a", "im-day-456"),
 	})
 	registry.Register(hopOneStub)
-	registry.Register(graphSearchOneHopStub("456", []interface{}{
-		graphSearchNode("im-day-456", 1, "456", graphDate, anchor),
-		graphSearchNode("doc-day-c", 2, "docC", graphDate, anchor),
-	}, []interface{}{
-		graphSearchEdge("edge-b", "im-day-456", "doc-day-c"),
-	}))
-	registry.Register(graphSearchOneHopStub("docC", []interface{}{
-		graphSearchNode("doc-day-c", 2, "docC", graphDate, anchor),
-	}, []interface{}{}))
 
 	err := runGraphSearchShortcut(t, []string{
-		"+graph-search", "--query", "什么是知识问答", "--max-hops", "3", "--concurrency", "4", "--as", "user", "--format", "json",
+		"+graph-search", "--query", "什么是知识问答", "--concurrency", "4", "--graph-query-mode", "off", "--as", "user", "--format", "json",
 	}, f, stdout, registry)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -429,14 +449,14 @@ func TestGraphSearchExecutesThreeHopsAndMergesOrigins(t *testing.T) {
 	for path, want := range map[string]int64{
 		"data.search_candidates.#":              6,
 		"data.roots.#":                          3,
-		"data.nodes.#":                          3,
-		"data.edges.#":                          2,
+		"data.nodes.#":                          2,
+		"data.edges.#":                          1,
 		"data.skipped_candidates.#":             1,
-		"data.hops.#":                           3,
+		"data.hops.#":                           1,
 		"data.evidence.candidate_content_count": 6,
-		"data.evidence.node_detail_count":       3,
-		"data.evidence.edge_detail_count":       2,
-		"meta.hops_executed":                    3,
+		"data.evidence.node_detail_count":       2,
+		"data.evidence.edge_detail_count":       1,
+		"meta.hops_executed":                    1,
 		"meta.failed_batch_count":               0,
 	} {
 		if value := gjson.Get(got, path).Int(); value != want {
@@ -470,23 +490,15 @@ func TestGraphSearchExecutesThreeHopsAndMergesOrigins(t *testing.T) {
 		messageRoot.Get("search_origins.0.anchor_time_source").String() != "knowledge_qa.passages.extra.create_time" {
 		t.Fatalf("message root derivation evidence missing: %s", got)
 	}
-	if gjson.Get(got, `data.nodes.#(node_id=="doc-day-c").first_seen_hop`).Int() != 2 {
-		t.Fatalf("first_seen_hop missing: %s", got)
-	}
-	if gjson.Get(got, `data.nodes.#(node_id=="doc-day-c").search_origins.#`).Int() == 0 ||
-		gjson.Get(got, `data.nodes.#(node_id=="doc-day-c").expanded_from.0.hop`).Int() != 2 {
-		t.Fatalf("multi-hop provenance missing: %s", got)
-	}
 	if gjson.Get(got, "data.hops.0.new_node_count").Int() != 2 ||
 		gjson.Get(got, "data.hops.0.new_node_detail_count").Int() != 2 ||
-		gjson.Get(got, "data.hops.1.new_node_count").Int() != 1 ||
-		gjson.Get(got, "data.hops.2.new_node_count").Int() != 0 ||
-		gjson.Get(got, "meta.stop_reason").String() != "no_new_graph_evidence" {
-		t.Fatalf("per-hop structural novelty missing: %s", got)
+		gjson.Get(got, "data.next_roots.#").Int() != 1 ||
+		gjson.Get(got, "meta.stop_reason").String() != "agent_decision_required" {
+		t.Fatalf("initial-hop continuation contract missing: %s", got)
 	}
 	if gjson.Get(got, "data.evidence.node_details.0.detail_path").String() != "nodes[0].detail" ||
 		gjson.Get(got, "data.evidence.edge_details.0.detail_path").String() != "edges[0].detail" ||
-		gjson.Get(got, "data.evidence.edge_groups.#").Int() != 2 {
+		gjson.Get(got, "data.evidence.edge_groups.#").Int() != 1 {
 		t.Fatalf("node/edge evidence index missing: %s", got)
 	}
 	if strings.Contains(got, strconv.FormatInt(graphSearchTestInternalUID, 10)) {
@@ -519,6 +531,47 @@ func TestGraphSearchExecutesThreeHopsAndMergesOrigins(t *testing.T) {
 	}
 	if gotEnd := gjson.GetBytes(hopOneStub.CapturedBody, "time_range.end_time_sec").Int(); gotEnd != wantEnd {
 		t.Fatalf("Hop 1 end = %d, want %d", gotEnd, wantEnd)
+	}
+}
+
+func TestGraphSearchSingleHopReturnsNextRootsForAgentDecision(t *testing.T) {
+	f, stdout, _, registry := cmdutil.TestFactory(t, memoryTestConfig(t))
+	anchor := time.Date(2026, 9, 10, 12, 0, 0, 0, graphSearchLocation).Unix()
+	registry.Register(&httpmock.Stub{
+		Method: http.MethodPost,
+		URL:    graphSearchKnowledgeQAURL,
+		Body: map[string]interface{}{
+			"passages": []interface{}{
+				graphSearchPassage("p-doc", graphSearchSourceDoc, "Seed", "https://bytedance.larkoffice.com/docx/docA", 1, 0, anchor),
+			},
+			"BaseResp": map[string]interface{}{"StatusCode": 0},
+		},
+	})
+	oneHopStub := graphSearchOneHopStub("docA", []interface{}{
+		graphSearchNode("doc-day-a", 2, "docA", "2026-09-10", anchor),
+		graphSearchNode("doc-day-b", 2, "docB", "2026-09-10", anchor),
+	}, []interface{}{
+		graphSearchEdge("edge-a-b", "doc-day-a", "doc-day-b"),
+	})
+	registry.Register(oneHopStub)
+
+	err := runGraphSearchShortcut(t, []string{
+		"+graph-search", "--query", "项目决策", "--graph-query-mode", "off",
+		"--as", "user", "--format", "json",
+	}, f, stdout, registry)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	got := stdout.String()
+	nextRoot := graphSearchFindRoot(gjson.Get(got, "data.next_roots").Array(), 2, "docB")
+	if !nextRoot.Exists() || !gjson.Get(got, "data.continuation.requires_model_decision").Bool() ||
+		gjson.Get(got, "data.continuation.next_root_count").Int() != 1 ||
+		gjson.Get(got, "data.continuation.max_total_hops").Int() != 10 ||
+		gjson.Get(got, "meta.stop_reason").String() != "agent_decision_required" {
+		t.Fatalf("single-hop continuation contract missing: %s", got)
+	}
+	if len(oneHopStub.CapturedBodies) != 1 || graphSearchBodyHasRoot(oneHopStub.CapturedBody, "docB") {
+		t.Fatalf("next root was auto-expanded: %s", oneHopStub.CapturedBody)
 	}
 }
 
@@ -576,7 +629,8 @@ func TestGraphSearchAutoGraphQueryRunsConcurrentlyAndMergesWithoutExpanding(t *t
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- runGraphSearchShortcut(t, []string{
-			"+graph-search", "--query", "最近项目进展", "--max-hops", "3", "--graph-query-lookback-days", "1", "--as", "user", "--format", "json",
+			"+graph-search", "--query", "最近项目进展", "--graph-query-mode", "auto",
+			"--graph-query-lookback-days", "1", "--as", "user", "--format", "json",
 		}, f, stdout, registry)
 	}()
 	for name, started := range map[string]<-chan struct{}{
@@ -615,6 +669,13 @@ func TestGraphSearchAutoGraphQueryRunsConcurrentlyAndMergesWithoutExpanding(t *t
 		gjson.Get(got, "data.evidence.graph_query_only_edge_count").Int() != 1 {
 		t.Fatalf("retrieval classification missing: %s", got)
 	}
+	nextRoot := graphSearchFindRoot(gjson.Get(got, "data.next_roots").Array(), 2, "docG")
+	if !nextRoot.Exists() ||
+		nextRoot.Get("search_origins.0.candidate_source").String() != "graph_query.nodes" ||
+		!gjson.Get(got, "data.continuation.requires_model_decision").Bool() ||
+		gjson.Get(got, "meta.stop_reason").String() != "agent_decision_required" {
+		t.Fatalf("GraphQuery root was not exposed for Agent selection: %s", got)
+	}
 	if gotLane := graphQueryStub.CapturedHeaders.Get("x-tt-env"); gotLane != graphSearchDefaultTTEnv {
 		t.Fatalf("GraphQuery x-tt-env = %q, want %q", gotLane, graphSearchDefaultTTEnv)
 	}
@@ -648,7 +709,8 @@ func TestGraphSearchGraphQueryFailureReturnsPrimaryResultAsIncomplete(t *testing
 	}, []interface{}{}))
 
 	err := runGraphSearchShortcut(t, []string{
-		"+graph-search", "--query", "最近项目进展", "--max-hops", "1", "--graph-query-lookback-days", "1", "--as", "user", "--format", "json",
+		"+graph-search", "--query", "最近项目进展", "--graph-query-mode", "auto",
+		"--graph-query-lookback-days", "1", "--as", "user", "--format", "json",
 	}, f, stdout, registry)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -767,7 +829,7 @@ func TestGraphSearchReturnsPartialResultsWhenOneBatchFails(t *testing.T) {
 	registry.Register(failureStub)
 
 	err := runGraphSearchShortcut(t, []string{
-		"+graph-search", "--query", "q", "--max-hops", "1", "--concurrency", "2", "--as", "user", "--format", "json",
+		"+graph-search", "--query", "q", "--concurrency", "2", "--as", "user", "--format", "json",
 	}, f, stdout, registry)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -805,7 +867,7 @@ func TestGraphSearchAllOneHopBatchesFail(t *testing.T) {
 		Body:     map[string]interface{}{"code": graphQueryRetryCode, "msg": "retry later"},
 	})
 	err := runGraphSearchShortcut(t, []string{
-		"+graph-search", "--query", "q", "--max-hops", "1", "--as", "user", "--format", "json",
+		"+graph-search", "--query", "q", "--as", "user", "--format", "json",
 	}, f, stdout, registry)
 	if err == nil || !errs.IsAPI(err) || !strings.Contains(err.Error(), "all OneHop batches failed") {
 		t.Fatalf("error = %T %v, want all-batches API error", err, err)
@@ -958,6 +1020,9 @@ func mountedGraphSearchCommand(t *testing.T) *cobra.Command {
 
 func runGraphSearchShortcut(t *testing.T, args []string, f *cmdutil.Factory, stdout *bytes.Buffer, registries ...*httpmock.Registry) error {
 	t.Helper()
+	if !graphSearchTestHasFlag(args, "--graph-query-mode") {
+		args = append(args, "--graph-query-mode", "off")
+	}
 	for _, registry := range registries {
 		registerGraphSearchIdentityStubs(registry)
 	}
@@ -970,6 +1035,15 @@ func runGraphSearchShortcut(t *testing.T, args []string, f *cmdutil.Factory, std
 		stdout.Reset()
 	}
 	return parent.ExecuteContext(context.Background())
+}
+
+func graphSearchTestHasFlag(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == name || strings.HasPrefix(arg, name+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func registerGraphSearchIdentityStubs(registry *httpmock.Registry) {

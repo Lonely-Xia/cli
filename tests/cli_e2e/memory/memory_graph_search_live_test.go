@@ -35,8 +35,9 @@ func TestMemoryGraphSearchLive(t *testing.T) {
 		Args: []string{
 			"memory", "+graph-search",
 			"--query", query,
-			"--max-hops", "1",
 			"--concurrency", "4",
+			"--graph-query-mode", "on",
+			"--graph-query-lookback-days", "1",
 		},
 		DefaultAs: "user",
 		Format:    "json",
@@ -49,6 +50,9 @@ func TestMemoryGraphSearchLive(t *testing.T) {
 	require.True(t, gjson.Get(result.Stdout, "ok").Bool(), "Graph Search must report success")
 	require.True(t, gjson.Get(result.Stdout, "data.search_candidates").Exists(), "Graph Search must include search candidates")
 	require.True(t, gjson.Get(result.Stdout, "data.roots").Exists(), "Graph Search must include roots")
+	require.True(t, gjson.Get(result.Stdout, "data.next_roots").Exists(), "Graph Search must include Agent-selectable next roots")
+	require.Equal(t, "agent_controlled", gjson.Get(result.Stdout, "data.continuation.mode").String())
+	require.Equal(t, int64(10), gjson.Get(result.Stdout, "data.continuation.max_total_hops").Int())
 	require.True(t, gjson.Get(result.Stdout, "data.nodes").Exists(), "Graph Search must include nodes")
 	require.True(t, gjson.Get(result.Stdout, "data.edges").Exists(), "Graph Search must include edges")
 	require.True(t, gjson.Get(result.Stdout, "data.graph_query").Exists(), "Graph Search must describe supplemental GraphQuery")

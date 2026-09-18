@@ -278,7 +278,7 @@ USER 节点及其关联边。
 
 `--lookback-days` 默认 7，CLI 以执行时刻为右开边界构造完整滚动时间窗；一次命令只发送一次
 OneHop 请求，不做 24 小时切片，也不自动继续下一跳。`--hop` 只记录 Agent 当前探索层数，范围
-1～5；未传 `--trace-id` 时自动生成。`--hop`、`--trace-id` 和 `--scene` 仅作为 CLI 输出元数据，
+1～10；未传 `--trace-id` 时自动生成。`--hop`、`--trace-id` 和 `--scene` 仅作为 CLI 输出元数据，
 不发送给 GraphHub。下行 `params` 只发送协议字段 `detailFormat`。输出支持 `json` 和 `pretty`。
 
 JSON 输出的 `data.nodes` 和 `data.edges` 保留下游详情，并补充 `expanded_from` 来源信息；节点还会
@@ -287,9 +287,9 @@ JSON 输出的 `data.nodes` 和 `data.edges` 保留下游详情，并补充 `exp
 
 ## 内网自然语言 Graph Search
 
-`memory +graph-search` 先通过 Knowledge QA 召回当前 UID 可见的 Doc、Wiki、Message 和 Minutes，再把
-Doc/Wiki 转成 DOC_DAY Root、Message 转成 IM_DAY Root，并以 BFS 自动执行最多三跳 OneHop。
-Minutes 只保留为候选，不进入 OneHop。
+`memory +graph-search` 通过 Knowledge QA 和 GraphQuery 生成可追溯的 Root 候选。推荐的 Skill
+只执行第一跳 OneHop，返回 `next_roots` 后由 Agent 阅读节点和边的 Detail、判断与 Query 的相关性，
+再决定是否调用下一次原子 OneHop。Minutes 只保留为候选，不进入 OneHop。
 
 面向 Codex 的推荐入口是从 Skill 选择器直接选择 `memory-graph-search`，然后输入 query，例如：
 
@@ -303,10 +303,9 @@ Codex 会把选择项后的文本作为 query，并在内部执行下面的 CLI 
 ```bash
 lark-memory-cli memory +graph-search --as user \
   --query "什么是知识问答" \
-  --max-hops 3 \
   --concurrency 8 \
   --detail-format markdown \
-  --graph-query-mode auto \
+  --graph-query-mode on \
   --graph-query-lookback-days 7 \
   --format json
 ```
@@ -322,23 +321,23 @@ lark-memory-cli memory +graph-search --as user \
 - `search_candidates` 只来自权限过滤后的 `passages`，并保留候选 `content` 作为最新事实基线；
   `passages_ignore_filter` 永远不会进入输出或成为 Graph 起点。
 - Wiki 节点会使用 `wiki:node:retrieve` 解析底层 `obj_token`；单个 Wiki 解析失败只跳过该候选。
-- 每跳按 Asia/Shanghai 日期分组并发请求，跳间串行；默认并发度 8，结果规模不截断。
+- 第一跳按 Asia/Shanghai 日期分组并发请求；默认并发度 8，结果规模不截断。
 - `roots[].search_origins` 记录 NodeType、RootID 和日期的推导来源；不得用 `source_id` 猜下一跳 Root。
 - `data.evidence` 索引节点和边的 Detail 路径、缺失情况、端点完整性和重复关系分组；每跳同时输出
   `new_node_count`、`new_edge_count` 及对应 Detail 数量。若一跳没有新增点或边，将提前停止。
-- `--graph-query-mode=auto` 仅在“最近/上周/过去 N 天/recent/latest/明确日期”等时间意图下，
-  与 Knowledge QA 并行查询用户 Graph；今天、昨天、本周、上周、最近 N 天和明确日期使用精确自然时间窗，
-  其它时间意图回退配置的 1～7 天窗口。超过 7 天不静默截断，而是跳过补充并说明原因。
-- GraphQuery 与 OneHop 使用同一泳道，返回点边只在 OneHop 结束后按 NodeID/EdgeID 合并，不进入
-  OneHop frontier；`retrieved_via` 和 evidence `retrieval_class` 标记 `one_hop_only`、
-  `graph_query_only`、`corroborated`。GraphQuery 窗口失败时保留主链路结果并设置 `complete=false`。
+- Skill 使用 `--graph-query-mode=on`，让每个 Query 都并行尝试用户 Graph；有明确时间意图时使用
+  精确自然时间窗，否则使用配置的 1～7 天滚动窗口。超过 7 天不静默截断，而是跳过补充并说明原因。
+- GraphQuery 与 OneHop 使用同一泳道，返回点边按 NodeID/EdgeID 合并。带可靠 NodeType、RootID 和日期的
+  GraphQuery 节点写入 `next_roots`，但不会自动进入 OneHop；Agent 判断后才能继续。`retrieved_via`
+  和 evidence `retrieval_class` 标记 `one_hop_only`、`graph_query_only`、`corroborated`。
 - Knowledge QA 返回后立即开始 Wiki/OneHop，不等待独立 GraphQuery；最终答案仍等待两路汇合。
   `--concurrency` 是 FaaS、GraphQuery、Wiki 和 OneHop 共用的全局请求上限，不会因流水并行而翻倍。
 - 发起 Knowledge QA 或 Graph 请求前严格解析并刷新 UAT，并通过 `user_info` 在服务端验证；缺失、过期、
-  刷新失败或身份转换失败时不执行检索。试用期仍保留 `--max-hops=3`，不因时间型 Query 自动减少证据集合。
+  刷新失败或身份转换失败时不执行检索。`graph-search` 固定只执行初始 OneHop，不提供跳数参数；Agent
+  每次继续前重新判断，并通过 `graph-one-hop --hop` 显式执行后续跳，10 跳为安全上限。
 - 同一命令内相同 Wiki `node_token` 只调用一次 get-node，重复候选复用解析结果，候选来源仍完整保留。
-- 内网试用期不启用两阶段预筛选、硬截断或静默裁剪 Detail；权限内候选及全部返回点边 Detail
-  保持可用，用于验证 Graph 证据的能力上限。`evidence` / `edge_groups` 只做归因和重复感知。
+- 内网试用期不做硬截断或静默裁剪 Detail；权限内候选及全部返回点边 Detail 保持可用。选择下一跳
+  Root 只决定后续请求，不删除未选择证据；`evidence` / `edge_groups` 只做归因和重复感知。
 - 单个 OneHop 分组最终失败时，其它成功分组继续扩展；输出用 `meta.complete=false` 和
   `data.failed_batches` 标记部分成功。所有 OneHop 分组均失败时命令才整体失败。
 - `--dry-run` 展示脱敏的 user_info、ID 转换、Knowledge QA 请求和动态阶段说明，不执行任何远端调用。

@@ -31,7 +31,7 @@ const (
 	graphOneHopCalendarType = int64(5)
 	graphOneHopDefaultScene = "graphcli"
 	graphOneHopMinHop       = 1
-	graphOneHopMaxHop       = 5
+	graphOneHopMaxHop       = 10
 )
 
 type graphOneHopRoot struct {
@@ -81,7 +81,7 @@ var MemoryGraphOneHop = common.Shortcut{
 		{Name: "node-type", Type: "int_array", Desc: "target node type filter; repeat or use CSV; USER (4) is forbidden"},
 		{Name: "relation-type", Type: "string_array", Desc: "relation type filter; repeat for multiple relation types"},
 		{Name: "detail-format", Default: "markdown", Desc: "Graph detail format", Enum: []string{"markdown", "json"}},
-		{Name: "hop", Type: "int", Desc: "current Agent traversal hop (1-5); the API still expands exactly one hop", Required: true},
+		{Name: "hop", Type: "int", Desc: "current Agent traversal hop (1-10); the API still expands exactly one hop", Required: true},
 		{Name: "trace-id", Desc: "trace ID shared by commands in the same Agent traversal; generated when omitted"},
 		{Name: "scene", Default: graphOneHopDefaultScene, Desc: "fixed Graph caller scene", Enum: []string{graphOneHopDefaultScene}},
 	},

@@ -134,7 +134,6 @@ func TestMemoryDryRun(t *testing.T) {
 			Args: []string{
 				"memory", "+graph-search",
 				"--query", "什么是知识问答",
-				"--max-hops", "2",
 				"--concurrency", "4",
 				"--dry-run",
 			},
@@ -154,10 +153,10 @@ func TestMemoryDryRun(t *testing.T) {
 		require.Equal(t, "ppe_memory_hub", gjson.Get(result.Stdout, "identity_conversion_headers.X-Tt-Env").String(), "stdout:\n%s", result.Stdout)
 		require.Equal(t, "ppe_memory_hub", gjson.Get(result.Stdout, "knowledge_qa_headers.X-Tt-Env").String(), "stdout:\n%s", result.Stdout)
 		require.NotContains(t, result.Stdout, "7000000000000000001", "stdout must not contain a concrete UID")
-		require.Equal(t, int64(4), gjson.Get(result.Stdout, "dynamic_steps.#").Int(), "stdout:\n%s", result.Stdout)
+		require.Equal(t, int64(5), gjson.Get(result.Stdout, "dynamic_steps.#").Int(), "stdout:\n%s", result.Stdout)
 		require.Equal(t, "ppe_memory_hub", gjson.Get(result.Stdout, "one_hop_tt_env").String(), "stdout:\n%s", result.Stdout)
-		require.Equal(t, "auto", gjson.Get(result.Stdout, "graph_query.mode").String(), "stdout:\n%s", result.Stdout)
-		require.False(t, gjson.Get(result.Stdout, "graph_query.enabled").Bool(), "stdout:\n%s", result.Stdout)
+		require.Equal(t, "on", gjson.Get(result.Stdout, "graph_query.mode").String(), "stdout:\n%s", result.Stdout)
+		require.True(t, gjson.Get(result.Stdout, "graph_query.enabled").Bool(), "stdout:\n%s", result.Stdout)
 	})
 
 	t.Run("graph search can force supplemental graph query", func(t *testing.T) {
