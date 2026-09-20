@@ -27,9 +27,10 @@ const (
 var graphSearchLocation = time.FixedZone("Asia/Shanghai", graphSearchTimezoneOffsetSec)
 
 type graphSearchOrigin struct {
+	CandidateSource  string  `json:"candidate_source"`
 	Rank             int     `json:"rank"`
 	PassageID        string  `json:"passage_id,omitempty"`
-	SourceType       int64   `json:"source_type"`
+	SourceType       int64   `json:"source_type,omitempty"`
 	Title            string  `json:"title,omitempty"`
 	URL              string  `json:"url,omitempty"`
 	Score            float64 `json:"score,omitempty"`
@@ -226,6 +227,7 @@ func resolveGraphSearchCandidate(ctx context.Context, rctx *common.RuntimeContex
 		return skip("anchor_time_unavailable", "candidate does not contain a valid graph date anchor")
 	}
 	origin := graphSearchOrigin{
+		CandidateSource:  "knowledge_qa.passages",
 		Rank:             candidate.Rank,
 		PassageID:        candidate.PassageID,
 		SourceType:       candidate.SourceType,
@@ -370,6 +372,7 @@ func mergeGraphSearchOrigins(values, candidates []graphSearchOrigin) []graphSear
 	out := make([]graphSearchOrigin, 0, len(values)+len(candidates))
 	for _, origin := range append(append([]graphSearchOrigin(nil), values...), candidates...) {
 		key := strings.Join([]string{
+			origin.CandidateSource,
 			origin.PassageID,
 			strconv.FormatInt(origin.SourceType, 10),
 			origin.URL,

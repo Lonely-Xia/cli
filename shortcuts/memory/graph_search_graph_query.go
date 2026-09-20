@@ -101,7 +101,7 @@ func buildGraphSearchGraphQueryDryRun(spec graphSearchSpec) map[string]interface
 		"end_time_sec":   plan.EndTimeSec,
 		"window_count":   len(plan.Windows),
 		"tt_env":         spec.MemoryTTEnv,
-		"note":           "GraphQuery runs in parallel and its nodes/edges never enter the OneHop frontier",
+		"note":           "GraphQuery runs in parallel; verified roots are exposed as next_roots for Agent selection and are never auto-expanded",
 	}
 }
 
@@ -392,6 +392,14 @@ func mergeGraphSearchGraphQueryWindow(nodesByID, edgesByID map[string]map[string
 			filteredNodeCount++
 			continue
 		}
+		if strings.TrimSpace(common.GetString(node, "graph_date")) == "" {
+			eventTime, _ := graphOneHopInt64(node["event_time_sec"])
+			graphDate, valid := graphSearchDate(eventTime)
+			if !valid {
+				graphDate, _ = graphSearchDate(window.StartTimeSec)
+			}
+			node["graph_date"] = graphDate
+		}
 		node["retrieved_via"] = []graphSearchRetrievalSource{source}
 		mergeGraphSearchObject(nodesByID, node, "node_id")
 	}
@@ -422,6 +430,59 @@ func mergeGraphSearchGraphQueryWindow(nodesByID, edgesByID map[string]map[string
 		mergeGraphSearchObject(edgesByID, edge, "edge_id")
 	}
 	return filteredNodeCount, filteredEdgeCount, nil
+}
+
+func graphSearchGraphQueryRoots(nodes []map[string]interface{}) []graphSearchTraversalRoot {
+	roots := make([]graphSearchTraversalRoot, 0)
+	for _, node := range nodes {
+		if expandable, present := node["expandable"].(bool); present && !expandable {
+			continue
+		}
+		nodeType, ok := graphOneHopInt64(node["node_type"])
+		if !ok || nodeType < graphSearchIMDayNodeType || nodeType > 3 {
+			continue
+		}
+		rootID, ok := graphOneHopNonEmptyString(node["root_id"])
+		if !ok || !graphSearchSafeRootID(rootID) {
+			continue
+		}
+		graphDate := strings.TrimSpace(common.GetString(node, "graph_date"))
+		eventTime, _ := graphOneHopInt64(node["event_time_sec"])
+		anchorTimeSource := "graph_query.nodes.event_time_sec"
+		if eventTime <= 0 {
+			for _, source := range graphSearchRetrievalSources(node["retrieved_via"]) {
+				if source.Kind == graphSearchRetrievalGraphQuery && source.StartTimeSec > 0 {
+					eventTime = source.StartTimeSec
+					anchorTimeSource = "graph_query.window.start_time_sec"
+					break
+				}
+			}
+		}
+		if graphDate == "" {
+			graphDate, ok = graphSearchDate(eventTime)
+			if !ok {
+				continue
+			}
+		}
+		if _, _, ok := graphSearchDateWindow(graphDate); !ok {
+			continue
+		}
+		roots = append(roots, graphSearchTraversalRoot{
+			NodeType:  nodeType,
+			RootID:    rootID,
+			GraphDate: graphDate,
+			SearchOrigins: []graphSearchOrigin{{
+				CandidateSource:  "graph_query.nodes",
+				Title:            strings.TrimSpace(common.GetString(node, "title")),
+				AnchorTimeSec:    eventTime,
+				GraphDate:        graphDate,
+				NodeTypeSource:   "graph_query.nodes.node_type",
+				RootIDSource:     "graph_query.nodes.root_id",
+				AnchorTimeSource: anchorTimeSource,
+			}},
+		})
+	}
+	return filterGraphSearchCandidateRoots(roots, nil)
 }
 
 func newGraphSearchGraphQueryFailedWindow(execution graphWindowExecution, err error) graphSearchGraphQueryFailedWindow {

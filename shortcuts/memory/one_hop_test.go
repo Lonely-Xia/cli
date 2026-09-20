@@ -87,6 +87,11 @@ func TestParseGraphOneHopSpecDefaultsAndValidation(t *testing.T) {
 	if len(spec.NodeTypes) != 0 {
 		t.Fatalf("default node types = %#v, want no node type filter", spec.NodeTypes)
 	}
+	hardLimit := valid
+	hardLimit.Hop = 10
+	if _, err := parseGraphOneHopSpec(hardLimit, time.Unix(1_800_000_000, 0), "trace"); err != nil {
+		t.Fatalf("hop 10 must be accepted: %v", err)
+	}
 
 	for _, tc := range []struct {
 		name   string
@@ -99,7 +104,7 @@ func TestParseGraphOneHopSpecDefaultsAndValidation(t *testing.T) {
 		{name: "unsupported calendar root", mutate: func(in *graphOneHopInput) { in.Roots = []string{"5:calendar_123"} }, param: "--root"},
 		{name: "nonpositive lookback", mutate: func(in *graphOneHopInput) { in.LookbackDays = 0 }, param: "--lookback-days"},
 		{name: "missing hop", mutate: func(in *graphOneHopInput) { in.HopSet = false }, param: "--hop"},
-		{name: "hop too high", mutate: func(in *graphOneHopInput) { in.Hop = 6 }, param: "--hop"},
+		{name: "hop too high", mutate: func(in *graphOneHopInput) { in.Hop = 11 }, param: "--hop"},
 		{name: "user node filter", mutate: func(in *graphOneHopInput) { in.NodeTypes = []int{4} }, param: "--node-type"},
 		{name: "unsupported calendar filter", mutate: func(in *graphOneHopInput) { in.NodeTypes = []int{5} }, param: "--node-type"},
 		{name: "empty relation", mutate: func(in *graphOneHopInput) { in.RelationTypes = []string{" "} }, param: "--relation-type"},

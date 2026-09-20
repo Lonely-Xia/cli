@@ -20,7 +20,7 @@ Run exactly one OneHop request:
 lark-memory-cli memory +graph-one-hop \
   --root '<node_type>:<root_id>' \
   --lookback-days 7 \
-  --hop '<agent_hop_1_to_5>' \
+  --hop '<agent_hop_1_to_10>' \
   --detail-format markdown \
   --as user \
   --format json

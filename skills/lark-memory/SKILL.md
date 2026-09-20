@@ -75,7 +75,7 @@ lark-memory-cli memory +get --memory-key <memory_key> --payload-mode metadata --
 | 获取 memory 详情 | `lark-memory-cli memory +get --memory-key <key> --as user --format json` |
 | 获取指定 variant | `lark-memory-cli memory +get --memory-key <key> --variant-key <variant> --as user --format json` |
 | 查询历史 Graph | `lark-memory-cli memory +graph-range --start-time-sec <start> --end-time-sec <end> --as user --format ndjson` |
-| 查询一跳关系 | `lark-memory-cli memory +graph-one-hop --root '<node_type>:<root_id>' --hop <1-5> --as user --format json` |
+| 查询一跳关系 | `lark-memory-cli memory +graph-one-hop --root '<node_type>:<root_id>' --hop <1-10> --as user --format json` |
 | 调试请求结构 | 在上述命令后追加 `--dry-run` |
 
 ## 权限与身份
@@ -117,7 +117,7 @@ lark-memory-cli memory +get --memory-key <memory_key> --payload-mode metadata --
 - 只有已经确认 NodeType + RootID 时才能调用；`--root` 格式为 `<node_type>:<root_id>`，可重复。
 - `--lookback-days` 默认 7，表示截至执行时刻的完整滚动窗口；一次命令只发送一次 OneHop 请求，
   不切成 24 小时窗口，不自动继续下一跳。
-- `--hop` 必填且只能为 1～5，用于标识 Agent 当前探索层数；API 本身每次仍只查询一跳。
+- `--hop` 必填且只能为 1～10，用于标识 Agent 当前探索层数；API 本身每次仍只查询一跳。
 - 输出只使用 `json` 或 `pretty`；需要机器处理时使用 `json`。
 - USER（4）不能作为 Root 或目标类型，CALENDAR（5）尚未支持作为 Root 或目标过滤。未显式传
   `--node-type` 时不发送 `filters.node_types`；返回后再删除 USER 节点和与其相连的边。

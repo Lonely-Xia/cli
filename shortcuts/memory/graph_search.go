@@ -25,8 +25,6 @@ const (
 	graphSearchOpenIDType            int64 = 3
 	graphSearchTenantID              int64 = 1
 	graphSearchAppID                 int64 = 1234
-	graphSearchDefaultHops                 = 3
-	graphSearchMaxHops                     = 3
 	graphSearchDefaultConcurrency          = 8
 	graphSearchTimezoneOffsetSec           = 8 * 60 * 60
 	graphSearchDefaultTTEnv                = defaultMemoryTTEnv
@@ -38,7 +36,6 @@ const (
 
 type graphSearchInput struct {
 	Query                  string
-	MaxHops                int
 	Concurrency            int
 	DetailFormat           string
 	Format                 string
@@ -51,7 +48,6 @@ type graphSearchInput struct {
 
 type graphSearchSpec struct {
 	Query                  string
-	MaxHops                int
 	Concurrency            int
 	DetailFormat           string
 	InternalUserID         int64
@@ -65,8 +61,9 @@ type graphSearchSpec struct {
 }
 
 // MemoryGraphSearch turns a natural-language query into stable Memory Graph roots
-// through the intranet-only Knowledge QA endpoint, then performs a bounded
-// breadth-first traversal using the existing OneHop contract.
+// through the intranet-only Knowledge QA endpoint, then performs the initial
+// OneHop request. Agents explicitly control every later hop through
+// memory +graph-one-hop.
 var MemoryGraphSearch = common.Shortcut{
 	Service:     graphSearchService,
 	Command:     graphSearchCommand,
@@ -79,17 +76,17 @@ var MemoryGraphSearch = common.Shortcut{
 	AuthTypes: []string{"user"},
 	Flags: []common.Flag{
 		{Name: "query", Desc: "natural-language intranet knowledge query", Required: true},
-		{Name: "max-hops", Type: "int", Default: strconv.Itoa(graphSearchDefaultHops), Desc: "maximum breadth-first OneHop depth (1-3)"},
 		{Name: "concurrency", Type: "int", Default: strconv.Itoa(graphSearchDefaultConcurrency), Desc: "maximum concurrent Graph Search network requests across all stages"},
 		{Name: "detail-format", Default: "markdown", Desc: "Graph detail format", Enum: []string{"markdown", "json"}},
-		{Name: "graph-query-mode", Default: graphSearchGraphQueryModeAuto, Desc: "supplemental time-window GraphQuery mode", Enum: []string{graphSearchGraphQueryModeAuto, graphSearchGraphQueryModeOn, graphSearchGraphQueryModeOff}},
+		{Name: "graph-query-mode", Default: graphSearchGraphQueryModeOn, Desc: "time-window GraphQuery mode; defaults on so every query attempts Graph memory recall", Enum: []string{graphSearchGraphQueryModeAuto, graphSearchGraphQueryModeOn, graphSearchGraphQueryModeOff}},
 		{Name: "graph-query-lookback-days", Type: "int", Default: strconv.Itoa(graphSearchGraphQueryDefaultDays), Desc: "fallback rolling GraphQuery lookback when enabled (1-7); exact query time ranges take precedence"},
 	},
 	Tips: []string{
 		"ByteDance intranet only. The current UAT is verified and converted to the internal UID automatically.",
 		"Graph Search business requests default to x-tt-env=ppe_memory_hub; LARKSUITE_CLI_MEMORY_TT_ENV overrides it for this process.",
 		"Minutes are returned as skipped candidates because Knowledge QA does not expose a stable MEETING root.",
-		"Supplemental GraphQuery runs in parallel only for time-intent queries in auto mode and never feeds the OneHop frontier.",
+		"GraphQuery nodes with verified NodeType and RootID are returned as next_roots for Agent selection; they are never auto-expanded.",
+		"Graph Search always performs the initial OneHop only. Inspect node/edge Detail and next_roots before issuing memory +graph-one-hop.",
 		"Before Knowledge QA, Graph Search verifies the UAT with user_info and derives its internal UID through the intranet ID conversion service.",
 	},
 	Preflight: validateGraphSearchRawFlags,
@@ -171,7 +168,6 @@ func validateGraphSearchRawFlags(_ context.Context, cmd *cobra.Command) error {
 
 func graphSearchInputFromCommand(cmd *cobra.Command) graphSearchInput {
 	query, _ := cmd.Flags().GetString("query")
-	maxHops, _ := cmd.Flags().GetInt("max-hops")
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	detailFormat, _ := cmd.Flags().GetString("detail-format")
 	format, _ := cmd.Flags().GetString("format")
@@ -179,7 +175,6 @@ func graphSearchInputFromCommand(cmd *cobra.Command) graphSearchInput {
 	graphQueryLookbackDays, _ := cmd.Flags().GetInt("graph-query-lookback-days")
 	return graphSearchInput{
 		Query:                  query,
-		MaxHops:                maxHops,
 		Concurrency:            concurrency,
 		DetailFormat:           detailFormat,
 		Format:                 format,
@@ -194,7 +189,6 @@ func graphSearchInputFromCommand(cmd *cobra.Command) graphSearchInput {
 func graphSearchSpecFromRuntime(rctx *common.RuntimeContext, generatedTraceID string) (graphSearchSpec, error) {
 	return parseGraphSearchSpec(graphSearchInput{
 		Query:                  rctx.Str("query"),
-		MaxHops:                rctx.Int("max-hops"),
 		Concurrency:            rctx.Int("concurrency"),
 		DetailFormat:           rctx.Str("detail-format"),
 		Format:                 rctx.Format,
@@ -210,10 +204,6 @@ func parseGraphSearchSpec(input graphSearchInput, generatedTraceID string) (grap
 	query := strings.TrimSpace(input.Query)
 	if query == "" {
 		return graphSearchSpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument, "--query is required").WithParam("--query")
-	}
-	if input.MaxHops < 1 || input.MaxHops > graphSearchMaxHops {
-		return graphSearchSpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument,
-			"invalid --max-hops: must be between 1 and %d", graphSearchMaxHops).WithParam("--max-hops")
 	}
 	if input.Concurrency <= 0 {
 		return graphSearchSpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument,
@@ -238,7 +228,7 @@ func parseGraphSearchSpec(input graphSearchInput, generatedTraceID string) (grap
 	}
 	graphQueryMode := strings.TrimSpace(input.GraphQueryMode)
 	if graphQueryMode == "" && !input.GraphQueryModeSet {
-		graphQueryMode = graphSearchGraphQueryModeAuto
+		graphQueryMode = graphSearchGraphQueryModeOn
 	}
 	if graphQueryMode != graphSearchGraphQueryModeAuto && graphQueryMode != graphSearchGraphQueryModeOn && graphQueryMode != graphSearchGraphQueryModeOff {
 		return graphSearchSpec{}, errs.NewValidationError(errs.SubtypeInvalidArgument,
@@ -260,7 +250,6 @@ func parseGraphSearchSpec(input graphSearchInput, generatedTraceID string) (grap
 
 	return graphSearchSpec{
 		Query:                  query,
-		MaxHops:                input.MaxHops,
 		Concurrency:            input.Concurrency,
 		DetailFormat:           detailFormat,
 		TraceID:                traceID,
@@ -290,9 +279,9 @@ func buildGraphSearchDryRun(spec graphSearchSpec) *common.DryRunAPI {
 			"when enabled, query the current user's time-window Graph in parallel with Knowledge QA using the same x-tt-env",
 			"resolve Wiki node_token values with GET /open-apis/wiki/v2/spaces/get_node",
 			"group stable roots by Asia/Shanghai graph_date",
-			"call /open-apis/search/v2/memory_hub/one_hop breadth-first for up to max_hops",
+			"call /open-apis/search/v2/memory_hub/one_hop exactly once for the initial roots",
+			"expose verified GraphQuery nodes as next_roots without auto-expanding them",
 		}).
-		Set("max_hops", spec.MaxHops).
 		Set("concurrency", spec.Concurrency).
 		Set("detail_format", spec.DetailFormat).
 		Set("one_hop_tt_env", spec.MemoryTTEnv).

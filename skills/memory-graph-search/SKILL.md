@@ -25,10 +25,9 @@ This command is available only on the ByteDance intranet.
 ```bash
 lark-memory-cli memory +graph-search \
   --query '<user query>' \
-  --max-hops 3 \
   --concurrency 8 \
   --detail-format markdown \
-  --graph-query-mode auto \
+  --graph-query-mode on \
   --graph-query-lookback-days 7 \
   --as user \
   --format json
@@ -44,17 +43,20 @@ The identity conversion, Knowledge QA, OneHop, and supplemental GraphQuery reque
 `LARKSUITE_CLI_MEMORY_TT_ENV` overrides that default for the current process; do not change the lane unless
 the user asks.
 
-`--graph-query-mode auto` calls GraphQuery only when the query contains an explicit time intent such as
-“最近”, “上周”, “过去 3 天”, “recent”, or a date. Use `on` only when the user explicitly wants time-window
-graph context despite no detected marker; use `off` when the user asks to avoid the supplement. GraphQuery uses
-the Query's exact natural range for today, yesterday, this week, last week, recent N days, or explicit dates.
-Other time-intent queries use the configured rolling 1–7 day lookback. Unsupported ranges over seven days skip
-the supplement and expose `trigger_reason=time_range_unsupported`; they are never silently truncated.
+`--graph-query-mode on` makes every Graph Search query attempt a time-window Graph lookup during the pilot.
+Queries with an explicit supported time intent use that exact range; other queries use the configured rolling
+lookback. Use `off` only when the user asks to avoid GraphQuery. Unsupported explicit ranges over seven days
+skip the supplement and expose `trigger_reason=time_range_unsupported`; they are never silently truncated.
 
-Knowledge QA feeds Wiki resolution and OneHop as soon as its result is ready; OneHop does not wait for the
-independent GraphQuery. Final merging and answer generation still wait for both branches or mark a failed branch
-incomplete. A shared limiter enforces `--concurrency` across every Graph Search network request. During the pilot,
-keep `--max-hops 3`; stop early only when a hop returns no structurally new node, edge, or Detail.
+Knowledge QA supplies the initial semantic roots, but it is not the only root source. GraphQuery runs in parallel
+and returns every verified `NodeType + RootID` as `data.next_roots`; explicit reliable roots already present in
+the conversation may be queried with the atomic `memory +graph-one-hop` command. GraphQuery roots are never
+auto-expanded. A shared limiter enforces `--concurrency` across every Graph Search network request.
+
+Graph Search always performs exactly the initial OneHop and has no hop-count flag. After that response, the
+model must inspect node Detail, edge Detail, endpoints, time, and provenance, then decide whether any
+`next_roots` deserve another atomic OneHop call. Continue only for a clearly unresolved Query aspect with new
+relevant evidence. Ten hops is the absolute safety limit.
 
 ## Evidence workflow
 
@@ -62,7 +64,8 @@ Treat Knowledge QA as the freshness baseline and Graph as optional incremental e
 
 1. Confirm `data.evidence.candidate_source == "knowledge_qa.passages"` and
    `data.evidence.permission_filtered == true`. Use only `data.search_candidates`; never use
-   `passages_ignore_filter` or other unfiltered diagnostics.
+   `passages_ignore_filter` or other unfiltered diagnostics. This identifies the Knowledge QA candidate source,
+   not the complete root set.
 2. Read relevant candidate `content` first, especially for queries about recent status. Candidate content is
    allowed evidence but must remain traceable to its `passage_id`, URL, and timestamps.
 3. Validate every seed through `roots[].search_origins`: `node_type_source`, `root_id_source`, and
@@ -79,8 +82,9 @@ Treat Knowledge QA as the freshness baseline and Graph as optional incremental e
    - GraphQuery runs in parallel with Knowledge QA and uses the same lane.
    - OneHop may execute while GraphQuery is still running, but final evidence merging waits for both branches.
    - Check `range_source`, `start_time_sec`, and `end_time_sec` before using time-window evidence.
-   - Its nodes and edges are merged by NodeID/EdgeID only after OneHop finishes, so GraphQuery-only nodes
-     never enter the OneHop frontier.
+   - Its nodes and edges are merged by NodeID/EdgeID only after the initial OneHop finishes.
+   - Verified GraphQuery roots appear in `data.next_roots` with
+     `search_origins[].candidate_source == "graph_query.nodes"`; they never enter OneHop without a model decision.
    - Use `retrieved_via` and `data.evidence.*[].retrieval_class` to distinguish `one_hop_only`,
      `graph_query_only`, and structurally `corroborated` objects.
    - GraphQuery-only evidence still requires Query relevance checks over both node and edge Detail; appearing
@@ -98,13 +102,44 @@ The CLI's evidence counts and per-hop `new_*` fields prove structural novelty on
 value; the model must judge value from the Query together with the node Detail, edge Detail, endpoints, time,
 and provenance.
 
+## Agent-controlled continuation
+
+After the initial Graph Search command:
+
+1. Split the Query into the aspects that are already answered and still missing.
+2. For each returned node and edge, judge both:
+   - answer value: whether its Detail directly supports a missing aspect;
+   - expansion value: whether its relationship is likely to lead to a missing aspect.
+3. Keep all raw evidence, but select only reliable, expandable `data.next_roots` with relevant answer or
+   expansion value. Do not select USER, `expandable=false`, missing RootID, repeated, or clearly irrelevant roots.
+4. Call exactly one additional hop with the same trace:
+
+```bash
+lark-memory-cli memory +graph-one-hop \
+  --root '<node_type>:<root_id>' \
+  --lookback-days '<days covering the earliest selected anchor_date through now>' \
+  --hop '<2_to_10>' \
+  --trace-id '<meta.trace_id>' \
+  --detail-format markdown \
+  --as user \
+  --format json
+```
+
+Use the selected `next_roots[].anchor_dates` and the Query's time intent to compute the continuation lookback;
+do not blindly use seven days for historical roots.
+
+5. Re-evaluate relevance and unresolved aspects after every call. Stop when the answer is complete, there is no
+relevant new evidence or expansion value, only repeated evidence remains, no valid root remains, or hop 10 is
+reached. Record a concise selection or stop reason; do not expose hidden chain-of-thought.
+
 ## Pilot upper-bound rule
 
-During the initial internal trial, do not use two-stage preselection, hard truncation, or silent Detail pruning.
+During the initial internal trial, do not use hard truncation or silent Detail pruning.
 Keep all permission-filtered candidate content and all returned node and edge Detail available for analysis so
 the trial can measure the maximum useful contribution of Graph evidence. `data.evidence` and `edge_groups` are
 for provenance, organization, and duplicate-aware reasoning; they never replace or delete the raw `nodes` and
-`edges` payloads. If the AI tool cannot process the complete result because of a real context or output limit,
+`edges` payloads. Choosing which root to expand schedules the next network call; it must not delete the
+unselected evidence. If the AI tool cannot process the complete result because of a real context or output limit,
 report the limitation and mark the answer incomplete instead of silently selecting a subset.
 
 ## Result handling
@@ -112,7 +147,8 @@ report the limitation and mark the answer incomplete instead of silently selecti
 - Check `meta.complete`. When it is `false`, return the successful results and clearly identify the failed
   OneHop batches from `data.failed_batches` and GraphQuery windows from `data.graph_query.failed_windows` as
   incomplete branches.
-- If Knowledge QA returns no usable Doc, Wiki, or Message roots, explain that no Graph traversal started.
+- If Knowledge QA returns no usable Doc, Wiki, or Message roots, still inspect GraphQuery evidence and
+  `data.next_roots`. Explain that no initial OneHop ran; continue only when a non-QA root is relevant and valid.
 - Minutes appear only in `skipped_candidates`; do not present them as traversed Graph results.
 - If every OneHop batch fails, report the structured error and its `log_id` when present.
 - Supplemental GraphQuery failure must not discard a successful Knowledge QA + OneHop result. Return the

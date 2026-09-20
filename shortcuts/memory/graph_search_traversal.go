@@ -52,6 +52,8 @@ type graphSearchHopSummary struct {
 type graphSearchTraversalResult struct {
 	Nodes             []map[string]interface{}
 	Edges             []map[string]interface{}
+	NextRoots         []graphSearchTraversalRoot
+	ExpandedRoots     []graphSearchTraversalRoot
 	FailedBatches     []graphSearchFailedBatch
 	Hops              []graphSearchHopSummary
 	Complete          bool
@@ -83,95 +85,94 @@ func executeGraphSearchTraversal(rctx *common.RuntimeContext, spec graphSearchSp
 	nodesByID := make(map[string]map[string]interface{})
 	edgesByID := make(map[string]map[string]interface{})
 
-	for hop := 1; hop <= spec.MaxHops; hop++ {
-		frontier = filterGraphSearchFrontier(frontier, visited)
-		if len(frontier) == 0 {
-			if hop == 1 {
-				result.StopReason = "no_query_roots"
-			} else {
-				result.StopReason = "frontier_exhausted"
-			}
-			break
-		}
-		batches, err := buildGraphSearchBatches(frontier, hop)
-		if err != nil {
-			return result, err
-		}
-		result.OneHopCalled = true
-		result.HopsExecuted = hop
-		hopStarted := time.Now()
-		executions := runGraphSearchBatches(rctx, spec, batches)
-		if err := rctx.Ctx().Err(); err != nil {
-			return result, errs.NewNetworkError(errs.SubtypeNetworkTransport, "Graph Search traversal canceled").WithCause(err)
-		}
+	frontier = filterGraphSearchFrontier(frontier, visited)
+	if len(frontier) == 0 {
+		result.StopReason = "no_query_roots"
+		return result, nil
+	}
 
-		summary := graphSearchHopSummary{Hop: hop, TaskCount: len(frontier), BatchCount: len(batches)}
-		next := make([]graphSearchTraversalRoot, 0)
-		for _, execution := range executions {
-			if execution.Err != nil {
-				result.Complete = false
-				summary.FailedBatches++
-				result.FailedBatches = append(result.FailedBatches, newGraphSearchFailedBatch(execution))
-				continue
-			}
-			summary.SuccessfulBatches++
-			result.SuccessfulBatches++
-			if execution.Result.Meta != nil && execution.Result.Meta.LogID != "" {
-				summary.LogIDs = appendUniqueGraphSearchString(summary.LogIDs, execution.Result.Meta.LogID)
-			}
-			nodes := graphItems(execution.Result.Data, "nodes")
-			edges := graphItems(execution.Result.Data, "edges")
-			summary.ReturnedNodeCount += len(nodes)
-			summary.ReturnedEdgeCount += len(edges)
-			taskOrigins := graphSearchBatchOrigins(execution.Batch.Tasks)
-			for _, rawNode := range nodes {
-				node, ok := rawNode.(map[string]interface{})
-				if !ok {
-					return result, graphOneHopInvalidResponse("Graph Search OneHop node must be an object")
-				}
-				enrichGraphSearchObject(node, hop, execution.Batch.GraphDate, taskOrigins)
-				newNode, newNodeDetail := mergeGraphSearchObject(nodesByID, node, "node_id")
-				if newNode {
-					summary.NewNodeCount++
-				}
-				if newNodeDetail {
-					summary.NewNodeDetailCount++
-				}
-				if task, ok := nextGraphSearchTask(node); ok {
-					next = append(next, task)
-				}
-			}
-			for _, rawEdge := range edges {
-				edge, ok := rawEdge.(map[string]interface{})
-				if !ok {
-					return result, graphOneHopInvalidResponse("Graph Search OneHop edge must be an object")
-				}
-				enrichGraphSearchObject(edge, hop, execution.Batch.GraphDate, taskOrigins)
-				newEdge, newEdgeDetail := mergeGraphSearchObject(edgesByID, edge, "edge_id")
-				if newEdge {
-					summary.NewEdgeCount++
-				}
-				if newEdgeDetail {
-					summary.NewEdgeDetailCount++
-				}
-			}
-		}
-		sort.Strings(summary.LogIDs)
-		summary.TookMS = time.Since(hopStarted).Milliseconds()
-		result.Hops = append(result.Hops, summary)
-		if summary.NewNodeCount == 0 && summary.NewEdgeCount == 0 &&
-			summary.NewNodeDetailCount == 0 && summary.NewEdgeDetailCount == 0 {
-			result.StopReason = "no_new_graph_evidence"
-			break
-		}
+	const hop = 1
+	result.ExpandedRoots = append(result.ExpandedRoots, frontier...)
+	batches, err := buildGraphSearchBatches(frontier, hop)
+	if err != nil {
+		return result, err
+	}
+	result.OneHopCalled = true
+	result.HopsExecuted = hop
+	hopStarted := time.Now()
+	executions := runGraphSearchBatches(rctx, spec, batches)
+	if err := rctx.Ctx().Err(); err != nil {
+		return result, errs.NewNetworkError(errs.SubtypeNetworkTransport, "Graph Search traversal canceled").WithCause(err)
+	}
 
-		if len(next) == 0 {
-			result.StopReason = "frontier_exhausted"
-			break
+	summary := graphSearchHopSummary{Hop: hop, TaskCount: len(frontier), BatchCount: len(batches)}
+	next := make([]graphSearchTraversalRoot, 0)
+	for _, execution := range executions {
+		if execution.Err != nil {
+			result.Complete = false
+			summary.FailedBatches++
+			result.FailedBatches = append(result.FailedBatches, newGraphSearchFailedBatch(execution))
+			continue
 		}
+		summary.SuccessfulBatches++
+		result.SuccessfulBatches++
+		if execution.Result.Meta != nil && execution.Result.Meta.LogID != "" {
+			summary.LogIDs = appendUniqueGraphSearchString(summary.LogIDs, execution.Result.Meta.LogID)
+		}
+		nodes := graphItems(execution.Result.Data, "nodes")
+		edges := graphItems(execution.Result.Data, "edges")
+		summary.ReturnedNodeCount += len(nodes)
+		summary.ReturnedEdgeCount += len(edges)
+		taskOrigins := graphSearchBatchOrigins(execution.Batch.Tasks)
+		for _, rawNode := range nodes {
+			node, ok := rawNode.(map[string]interface{})
+			if !ok {
+				return result, graphOneHopInvalidResponse("Graph Search OneHop node must be an object")
+			}
+			enrichGraphSearchObject(node, hop, execution.Batch.GraphDate, taskOrigins)
+			newNode, newNodeDetail := mergeGraphSearchObject(nodesByID, node, "node_id")
+			if newNode {
+				summary.NewNodeCount++
+			}
+			if newNodeDetail {
+				summary.NewNodeDetailCount++
+			}
+			if task, ok := nextGraphSearchTask(node); ok {
+				next = append(next, task)
+			}
+		}
+		for _, rawEdge := range edges {
+			edge, ok := rawEdge.(map[string]interface{})
+			if !ok {
+				return result, graphOneHopInvalidResponse("Graph Search OneHop edge must be an object")
+			}
+			enrichGraphSearchObject(edge, hop, execution.Batch.GraphDate, taskOrigins)
+			newEdge, newEdgeDetail := mergeGraphSearchObject(edgesByID, edge, "edge_id")
+			if newEdge {
+				summary.NewEdgeCount++
+			}
+			if newEdgeDetail {
+				summary.NewEdgeDetailCount++
+			}
+		}
+	}
+	sort.Strings(summary.LogIDs)
+	summary.TookMS = time.Since(hopStarted).Milliseconds()
+	result.Hops = append(result.Hops, summary)
+
+	switch {
+	case summary.NewNodeCount == 0 && summary.NewEdgeCount == 0 &&
+		summary.NewNodeDetailCount == 0 && summary.NewEdgeDetailCount == 0:
+		result.StopReason = "no_new_graph_evidence"
+	case len(next) == 0:
+		result.StopReason = "frontier_exhausted"
+	default:
 		_, frontier = mergeGraphSearchRoots(next)
-		if hop == spec.MaxHops {
-			result.StopReason = "max_hops_reached"
+		result.NextRoots = filterGraphSearchCandidateRoots(frontier, result.ExpandedRoots)
+		if len(result.NextRoots) == 0 {
+			result.StopReason = "frontier_exhausted"
+		} else {
+			result.StopReason = "agent_decision_required"
 		}
 	}
 
@@ -187,6 +188,22 @@ func executeGraphSearchTraversal(rctx *common.RuntimeContext, spec graphSearchSp
 		return result.FailedBatches[i].GraphDate < result.FailedBatches[j].GraphDate
 	})
 	return result, nil
+}
+
+func filterGraphSearchCandidateRoots(candidates, expanded []graphSearchTraversalRoot) []graphSearchTraversalRoot {
+	_, mergedCandidates := mergeGraphSearchRoots(candidates)
+	expandedKeys := make(map[string]struct{}, len(expanded))
+	for _, root := range expanded {
+		expandedKeys[graphSearchTaskKey(root.NodeType, root.RootID, root.GraphDate)] = struct{}{}
+	}
+	out := make([]graphSearchTraversalRoot, 0, len(mergedCandidates))
+	for _, root := range mergedCandidates {
+		if _, ok := expandedKeys[graphSearchTaskKey(root.NodeType, root.RootID, root.GraphDate)]; ok {
+			continue
+		}
+		out = append(out, root)
+	}
+	return out
 }
 
 func filterGraphSearchFrontier(frontier []graphSearchTraversalRoot, visited map[string]struct{}) []graphSearchTraversalRoot {
