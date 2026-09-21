@@ -291,6 +291,10 @@ JSON 输出的 `data.nodes` 和 `data.edges` 保留下游详情，并补充 `exp
 只执行第一跳 OneHop，返回 `next_roots` 后由 Agent 阅读节点和边的 Detail、判断与 Query 的相关性，
 再决定是否调用下一次原子 OneHop。Minutes 只保留为候选，不进入 OneHop。
 
+最终合成时，Agent 会把已有知识问答答案作为基线，并同时读取节点 Detail、边 Detail、时间和来源。
+Graph 没有提供有效增量时原样保留基线；只有当前证据明确相关、答案仍不完整且存在可能补齐信息的
+`next_root` 时才继续 OneHop，不要求额外维护 Query Checklist 或缺失项状态机。
+
 面向 Codex 的推荐入口是从 Skill 选择器直接选择 `memory-graph-search`，然后输入 query，例如：
 
 ```text
@@ -340,6 +344,9 @@ lark-memory-cli memory +graph-search --as user \
   Root 只决定后续请求，不删除未选择证据；`evidence` / `edge_groups` 只做归因和重复感知。
 - 单个 OneHop 分组最终失败时，其它成功分组继续扩展；输出用 `meta.complete=false` 和
   `data.failed_batches` 标记部分成功。所有 OneHop 分组均失败时命令才整体失败。
+- Skill 将完整知识问答答案及其引用作为基线，与全部节点、边 Detail 和路径一起交给最终合成；Graph
+  只用于补充、修正、解释或重要佐证。不得因 Graph 局部信息丢失基线中的人名、数字、时间、任务清单
+  或状态；没有有效增量时直接返回基线答案。
 - `--dry-run` 展示脱敏的 user_info、ID 转换、Knowledge QA 请求和动态阶段说明，不执行任何远端调用。
 
 ## 排障

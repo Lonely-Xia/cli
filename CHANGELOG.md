@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **skills**: Preserve an existing Knowledge QA answer as the Graph Search baseline, merge only useful node and edge evidence, and continue OneHop only when relevant evidence leaves the answer materially incomplete.
 - **memory**: Rename the public time-window command and selector to `memory +graph-range` and `memory-graph-range`; remove `memory +graph-query` and retire the old selector during upgrades.
 - **memory**: Make Graph Search attempt GraphQuery for every query, always stop after the initial OneHop for model relevance judgment, expose OneHop/GraphQuery candidates through `next_roots`, remove the public `--max-hops` and legacy automatic BFS modes, and keep later traversal explicit through `graph-one-hop --hop` with a ten-hop safety limit.
 
