@@ -332,6 +332,10 @@ hop、trace ID 和 `log_id`。试用期不做静默截断；下游错误、413�
 `memory +graph-search` 用自然语言 query 调用字节跳动内网 Knowledge QA 和 GraphQuery，生成可追溯
 Graph Root。推荐 Skill 只执行第一跳，之后由 Agent 判断相关性和扩展价值，再决定是否继续：
 
+最终合成使用“知识问答答案基线 + 节点 Detail + 边 Detail + 时间与来源”。Graph 没有有效增量时
+直接保留基线；只有当前证据与 Query 明确相关、答案仍不完整，并且 `next_roots` 中存在可能补齐信息
+的节点时才继续 OneHop。该判断由模型完成，不引入额外的 Checklist 或缺失项状态机。
+
 安装后可在 Codex Skill 选择器中直接选择 `memory-graph-search`，并把选择项后的文本作为 query：
 
 ```text
@@ -388,6 +392,8 @@ lark-memory-cli memory +graph-search --as user \
   `first_seen_hop` 标记首次出现层级。
 - Agent 必须同时解析支持结论的节点 Detail 和边 Detail，并在候选基线与 Graph 增量间做事实级
   去重、时效排序和冲突检查；关系类型、拓扑或边数量本身不能证明语义价值。
+- 最终回答必须保留知识问答基线中的相关人名、数字、时间、任务清单、状态与结论。Graph 仅用于
+  补充、修正、解释或重要佐证；没有有效增量时直接返回基线，不为了体现 Graph 而增加重复内容。
 - Knowledge QA 不自动重试；OneHop 仅对临时网络错误或明确可重试错误最多重试三次。
 - `--dry-run` 使用 OpenID/UID 占位符，展示 user_info、ID 转换、Knowledge QA 与动态后续步骤。
 

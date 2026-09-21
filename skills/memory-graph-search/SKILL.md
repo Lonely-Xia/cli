@@ -1,6 +1,6 @@
 ---
 name: memory-graph-search
-version: 0.1.0
+version: 0.2.0
 description: "Search ByteDance-intranet knowledge and produce evidence-grounded answers from permission-filtered candidates, seeded OneHop traversal, and optional time-window GraphQuery node and edge Detail. Use for natural-language knowledge and multi-hop Graph search, not direct time-window or stable-root Graph commands."
 metadata:
   requires:
@@ -60,7 +60,10 @@ relevant evidence. Ten hops is the absolute safety limit.
 
 ## Evidence workflow
 
-Treat Knowledge QA as the freshness baseline and Graph as optional incremental evidence:
+Treat an existing Knowledge QA answer as the answer baseline and Graph as optional incremental evidence. If the
+caller or current conversation already contains that answer, preserve it together with its citations. If no
+answer exists, first form a candidate-only baseline from `data.search_candidates`; the CLI itself returns
+passages and Graph evidence, not a generated Knowledge QA answer.
 
 1. Confirm `data.evidence.candidate_source == "knowledge_qa.passages"` and
    `data.evidence.permission_filtered == true`. Use only `data.search_candidates`; never use
@@ -89,29 +92,46 @@ Treat Knowledge QA as the freshness baseline and Graph as optional incremental e
      `graph_query_only`, and structurally `corroborated` objects.
    - GraphQuery-only evidence still requires Query relevance checks over both node and edge Detail; appearing
      in the time window is not sufficient.
-7. Build a fact-level evidence ledger before answering. For each proposed claim record whether it is:
-   - `candidate_only`: fresh evidence from the permission-filtered Knowledge QA baseline;
-   - `one_hop_only`: a new fact reached from a Knowledge QA seed;
-   - `graph_query_only`: a new fact found only in the requested time window;
-   - `corroborated`: multiple retrieval paths or sources independently support the fact.
-8. Keep Graph evidence only when it adds a relevant fact, supplies a causal/relationship explanation,
-   corroborates a material claim, resolves a conflict, or provides a newer update. Otherwise answer from the
-   candidate baseline. For “recent” queries, prefer the newest supported fact and label older Graph context.
+7. Compare the node and edge Detail with the Query and the answer baseline. Keep Graph evidence only when it
+   adds a relevant fact, supplies a causal or relationship explanation, corroborates a material claim, resolves
+   a conflict, or provides a newer update. Otherwise ignore it.
+8. Use `retrieval_class` and provenance to support the comparison, but do not require an explicit Query
+   checklist, missing-aspect state machine, or user-visible evidence ledger. For “recent” queries, prefer the
+   newest supported fact and label older Graph context.
 
 The CLI's evidence counts and per-hop `new_*` fields prove structural novelty only. They do not prove semantic
 value; the model must judge value from the Query together with the node Detail, edge Detail, endpoints, time,
 and provenance.
 
+## Baseline-preserving synthesis
+
+The final synthesis input is the original Query, the complete answer baseline and its citations, plus every
+returned node and edge Detail, traversal path, timestamp, and provenance record. Do not replace the baseline
+with a fresh Graph-centric answer.
+
+Use one simple decision: does Graph add or correct information that materially helps answer the Query?
+
+- If no, return the baseline answer without adding Graph commentary.
+- If yes, patch the useful facts into the baseline while preserving its relevant names, numbers, dates, task
+  lists, status, and conclusions.
+- Replace a baseline claim only when newer or more authoritative Graph evidence clearly corrects it. Explain an
+  unresolved conflict instead of silently choosing one side.
+- Do not treat extra length, repeated evidence, topology, or edge count as answer improvement.
+- Do not mention Graph, OneHop, retrieval classes, or traversal mechanics in the user-facing answer unless the
+  user explicitly asks about the retrieval process.
+
+This is a fallback contract: Graph may improve the answer or leave it unchanged, but must not remove useful
+baseline facts without a supported correction.
+
 ## Agent-controlled continuation
 
 After the initial Graph Search command:
 
-1. Split the Query into the aspects that are already answered and still missing.
-2. For each returned node and edge, judge both:
-   - answer value: whether its Detail directly supports a missing aspect;
-   - expansion value: whether its relationship is likely to lead to a missing aspect.
-3. Keep all raw evidence, but select only reliable, expandable `data.next_roots` with relevant answer or
-   expansion value. Do not select USER, `expandable=false`, missing RootID, repeated, or clearly irrelevant roots.
+1. Compare the current node and edge Detail with the Query and the answer baseline.
+2. Continue only when the current Graph evidence is clearly relevant, the answer is still materially incomplete,
+   and a `data.next_roots` candidate is likely to supply the missing information.
+3. Select only reliable, expandable roots. Do not select USER, `expandable=false`, missing RootID, repeated, or
+   clearly irrelevant roots. If the three continuation conditions are not all true, stop.
 4. Call exactly one additional hop with the same trace:
 
 ```bash
@@ -128,9 +148,9 @@ lark-memory-cli memory +graph-one-hop \
 Use the selected `next_roots[].anchor_dates` and the Query's time intent to compute the continuation lookback;
 do not blindly use seven days for historical roots.
 
-5. Re-evaluate relevance and unresolved aspects after every call. Stop when the answer is complete, there is no
-relevant new evidence or expansion value, only repeated evidence remains, no valid root remains, or hop 10 is
-reached. Record a concise selection or stop reason; do not expose hidden chain-of-thought.
+5. Reapply the same three-condition test after every call. Stop when the answer is complete, no relevant new
+evidence appears, no valid root is likely to help, only repeated evidence remains, or hop 10 is reached. Record
+a concise selection or stop reason; do not expose hidden chain-of-thought.
 
 ## Pilot upper-bound rule
 

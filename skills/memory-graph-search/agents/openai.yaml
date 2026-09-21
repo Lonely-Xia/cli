@@ -1,7 +1,7 @@
 interface:
   display_name: "memory-graph-search"
-  short_description: "Answer from seeded and time-window graph evidence"
-  default_prompt: "Use $memory-graph-search to answer this query from fresh intranet candidates, seeded traversal, and relevant time-window graph evidence."
+  short_description: "Preserve the QA baseline and add useful graph evidence"
+  default_prompt: "Use $memory-graph-search to preserve the Knowledge QA answer baseline, add only relevant node and edge evidence, and continue OneHop only when the current evidence is relevant but the answer remains materially incomplete."
 
 policy:
   allow_implicit_invocation: true
