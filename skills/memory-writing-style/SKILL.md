@@ -39,8 +39,7 @@ process; it does not change `destination-idc=lf`. Do not change the lane unless 
 ## When the query asks to create or modify a document
 
 Use `ai_guidance.document_steps`, `template_requirements`, `verification_checklist`, and
-`document_guardrails` when available, together with the steps below. Older CLI versions may return only
-rewrite-as-new guidance; that guidance does not change the user's create or edit request.
+`document_guardrails` together with the steps below.
 
 1. Determine whether the user asked for a new document or an edit to an existing one. For an edit, read the
    target and preserve unrelated content and structure. For a new document, gather the requested factual material.
@@ -55,10 +54,8 @@ rewrite-as-new guidance; that guidance does not change the user's create or edit
    structural deviations, and remnants of the old structure when rewriting.
 
 Current user instructions and supplied facts remain authoritative. Do not invent facts, mix unrelated scenario
-patterns, or expose unrelated Memory content. When `ai_guidance.document_rewrite_prompt_template` is present,
-`prompt_template` applies to any query and the rewrite field covers rewriting into a new document. Older CLI
-versions may expose only a rewrite-specific `prompt_template`; follow this Skill's query-first instructions in
-that case.
+patterns, or expose unrelated Memory content. `ai_guidance.prompt_template` applies to any query;
+`document_rewrite_prompt_template` covers only an explicit request to rewrite an existing document into a new one.
 
 If login or `memory:hub` authorization is missing, follow `../lark-shared/SKILL.md`; do not switch to bot
 identity. If the PPE Memory is not ready or the API returns a structured failure, report its status and `log_id`
