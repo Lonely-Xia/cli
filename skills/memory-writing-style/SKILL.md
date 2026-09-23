@@ -53,8 +53,10 @@ rewrite-as-new guidance; that guidance does not change the user's create or edit
    structural deviations, and remnants of the old structure when rewriting.
 
 Current user instructions and supplied facts remain authoritative. Do not invent facts, mix unrelated scenario
-patterns, or expose unrelated Memory content. `ai_guidance.prompt_template` applies to any query;
-`document_rewrite_prompt_template` is only an example for rewriting an existing document into a new one.
+patterns, or expose unrelated Memory content. When `ai_guidance.document_rewrite_prompt_template` is present,
+`prompt_template` applies to any query and the rewrite field covers rewriting into a new document. Older CLI
+versions may expose only a rewrite-specific `prompt_template`; follow this Skill's query-first instructions in
+that case.
 
 If login or `memory:hub` authorization is missing, follow `../lark-shared/SKILL.md`; do not switch to bot
 identity. If the PPE Memory is not ready or the API returns a structured failure, report its status and `log_id`
