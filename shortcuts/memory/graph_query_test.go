@@ -31,10 +31,10 @@ import (
 
 func TestMemoryGraphRangeRegistered(t *testing.T) {
 	got := Shortcuts()
-	if len(got) != 6 {
-		t.Fatalf("len(Shortcuts()) = %d, want 6", len(got))
+	if len(got) != 7 {
+		t.Fatalf("len(Shortcuts()) = %d, want 7", len(got))
 	}
-	want := []string{"+list", "+get", "+graph-range", "+graph-one-hop", "+graph-search", "+one-hop"}
+	want := []string{"+list", "+get", "+graph-range", "+graph-one-hop", "+graph-search", "+writing-style", "+one-hop"}
 	for index := range want {
 		if got[index].Command != want[index] {
 			t.Fatalf("commands[%d] = %q, want %q", index, got[index].Command, want[index])

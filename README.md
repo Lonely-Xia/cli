@@ -1,6 +1,6 @@
 # lark-memory-cli
 
-`lark-memory-cli` 是这个 fork 中面向 Memory Hub 的专用命令入口，目前只聚焦五个
+`lark-memory-cli` 是这个 fork 中面向 Memory Hub 的专用命令入口，目前只聚焦六个
 shortcuts：
 
 - `lark-memory-cli memory +list`
@@ -8,10 +8,12 @@ shortcuts：
 - `lark-memory-cli memory +graph-range`
 - `lark-memory-cli memory +graph-one-hop`
 - `lark-memory-cli memory +graph-search`
+- `lark-memory-cli memory +writing-style`
 
-这五个命令使用用户身份调用，需要 `memory:hub` scope。Memory Hub 当前默认调用
-线上 OpenAPI 域名；五个命令的 Memory/Graph/FaaS 业务请求统一发送
-`x-tt-env: ppe_memory_hub`。安装脚本会生成独立 wrapper，不覆盖用户已有 `lark-cli` 命令。
+这六个命令使用用户身份调用，需要 `memory:hub` scope。Memory Hub 当前默认调用
+线上 OpenAPI 域名；通用 Memory/Graph/FaaS 命令默认发送 `x-tt-env: ppe_memory_hub`，
+`+writing-style` 默认读取 `ppe_memory_schema`，均可通过 `LARKSUITE_CLI_MEMORY_TT_ENV`
+为当前进程覆盖。安装脚本会生成独立 wrapper，不覆盖用户已有 `lark-cli` 命令。
 
 更完整的安装与排障说明见 [MEMORY_SHORTCUTS.md](./MEMORY_SHORTCUTS.md)。
 
@@ -89,8 +91,8 @@ export GO_BIN="/path/to/go"
 export LARKSUITE_CLI_CONFIG_DIR="$HOME/.config/lark-memory-cli"
 ```
 
-安装脚本会把总路由 `lark-memory` 和五个命令选择器 `memory-list`、`memory-get`、
-`memory-graph-range`、`memory-graph-one-hop`、`memory-graph-search` 同步到
+安装脚本会把总路由 `lark-memory` 和六个命令选择器 `memory-list`、`memory-get`、
+`memory-graph-range`、`memory-graph-one-hop`、`memory-graph-search`、`memory-writing-style` 同步到
 `$HOME/.agents/skills`。Codex 和其它兼容 Agent 都从这个共享目录发现这些便携 skills，避免同时
 写入 `$HOME/.codex/skills` 后在选择器中重复展示。
 升级时会归档旧的 `memory-graph-query` 选择器，避免新旧名称同时展示。
@@ -127,7 +129,7 @@ Codex/Agent 通常只在会话启动时扫描 skill，切换后请重启或新�
 
 ## 升级
 
-从不包含五个 `memory-*` 命令选择器的旧版本升级时，使用下面的一次性兼容命令。它会自动寻找
+从不包含六个 `memory-*` 命令选择器的旧版本升级时，使用下面的一次性兼容命令。它会自动寻找
 Go 1.23+、升级二进制，再用刚拉取的 `memoryctl refresh` 补齐所有受管 skills，同时保留当前
 启用或停用状态；旧版遗留在 `$HOME/.codex/skills` 的 Memory 重复项会被无损迁移到
 `$HOME/.codex/skills/.disabled/lark-memory-cli-duplicates`：
@@ -226,6 +228,29 @@ lark-memory-cli memory +get --as user \
 ```
 
 `--payload-mode` 支持 `metadata`、`summary`、`full`，默认值是 `full`。
+
+## 获取并应用个人写作风格
+
+`memory +writing-style` 固定读取 `personal_memory_snapshot` 的
+`agentic_v1_writing_pattn_v1` variant，将 `写作风格.md` 的 `h1/h2/h3/text` item 流解析为章节、
+子章节与规则，同时返回来源索引和 AI 使用指引：
+
+```bash
+lark-memory-cli memory +writing-style --as user --format json
+```
+
+该命令默认发送 `x-tt-env: ppe_memory_schema` 和 `destination-idc: lf`。如需在其它泳道验证，
+可仅对当前进程覆盖 `x-tt-env`：
+
+```bash
+LARKSUITE_CLI_MEMORY_TT_ENV='<ppe_env>' \
+  lark-memory-cli memory +writing-style --as user --format json
+```
+
+Agent 应先应用“跨场景稳定特征”，再从“场景化写作模式”中选择唯一匹配场景；改写文档时，
+只选择一份最相关的同类型参考文档作为格式模板，实际读取完整代表性区块并确认 block 结构，
+严格复刻标题、板块、表格列、列表、标签、checkbox、状态标记和内容位置。新文档创建后必须回读，
+清除结构偏差和旧结构残留。Memory 只用于调整表达风格，不能替代当前事实或用户最新指令。
 
 ## 查询 Memory Graph 历史数据
 
@@ -363,8 +388,9 @@ head -n 5 "$(command -v lark-memory-cli)"
 LARKSUITE_CLI_REMOTE_META="${LARKSUITE_CLI_REMOTE_META:-off}"
 ```
 
-默认请求走线上 OpenAPI 域名。五个命令的 Memory/Graph/FaaS 业务请求统一发送
-`x-tt-env: ppe_memory_hub`。如需覆盖，可以显式设置：
+默认请求走线上 OpenAPI 域名。通用 Memory/Graph/FaaS 命令默认发送
+`x-tt-env: ppe_memory_hub`，`+writing-style` 默认发送 `x-tt-env: ppe_memory_schema`。
+如需覆盖，可以显式设置：
 
 ```bash
 export LARKSUITE_CLI_OPEN_BASE_URL="https://open.feishu-pre.cn"

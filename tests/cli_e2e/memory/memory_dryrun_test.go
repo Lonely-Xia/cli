@@ -52,6 +52,28 @@ func TestMemoryDryRun(t *testing.T) {
 		require.Equal(t, "full", gjson.Get(result.Stdout, "api.0.body.payload_mode").String())
 	})
 
+	t.Run("writing style uses the fixed PPE memory", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		t.Cleanup(cancel)
+
+		result, err := clie2e.RunCmd(ctx, clie2e.Request{
+			Args: []string{
+				"memory", "+writing-style",
+				"--dry-run",
+			},
+		})
+		require.NoError(t, err)
+		result.AssertExitCode(t, 0)
+
+		require.Equal(t, "POST", gjson.Get(result.Stdout, "api.0.method").String())
+		require.Equal(t, "/open-apis/search/v2/memory_hub/get_memory", gjson.Get(result.Stdout, "api.0.url").String())
+		require.Equal(t, "personal_memory_snapshot", gjson.Get(result.Stdout, "api.0.body.memory_key").String())
+		require.Equal(t, "agentic_v1_writing_pattn_v1", gjson.Get(result.Stdout, "api.0.body.variant_key").String())
+		require.Equal(t, "full", gjson.Get(result.Stdout, "api.0.body.payload_mode").String())
+		require.Equal(t, "ppe_memory_schema", gjson.Get(result.Stdout, "headers.X-Tt-Env").String())
+		require.Equal(t, "lf", gjson.Get(result.Stdout, "headers.Destination-Idc").String())
+	})
+
 	t.Run("graph range plans one window", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		t.Cleanup(cancel)

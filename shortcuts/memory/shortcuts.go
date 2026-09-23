@@ -27,6 +27,7 @@ func Shortcuts() []common.Shortcut {
 		MemoryGraphRange,
 		MemoryGraphOneHop,
 		MemoryGraphSearch,
+		MemoryWritingStyle,
 		MemoryOneHop,
 	}
 }

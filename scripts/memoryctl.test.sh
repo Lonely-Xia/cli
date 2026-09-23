@@ -26,7 +26,7 @@ prefix="$tmp/prefix"
 home="$tmp/home"
 app_dir="$prefix/libexec/lark-memory-cli"
 
-managed_skills=("lark-memory" "memory-list" "memory-get" "memory-graph-range" "memory-graph-one-hop" "memory-graph-search")
+managed_skills=("lark-memory" "memory-list" "memory-get" "memory-graph-range" "memory-graph-one-hop" "memory-graph-search" "memory-writing-style")
 mkdir -p "$source_dir/skills/lark-shared" "$app_dir" "$home"
 for skill in "${managed_skills[@]}"; do
   mkdir -p "$source_dir/skills/$skill"
@@ -56,6 +56,7 @@ if grep -Fq 'open.feishu-pre.cn' "$prefix/bin/lark-memory-cli"; then
 fi
 test -f "$home/.agents/skills/lark-memory/SKILL.md" || fail "agents memory skill was not enabled"
 test -f "$home/.agents/skills/memory-graph-search/SKILL.md" || fail "agents graph search skill was not enabled"
+test -f "$home/.agents/skills/memory-writing-style/SKILL.md" || fail "agents writing style skill was not enabled"
 for skill in memory-list memory-get memory-graph-range memory-graph-one-hop; do
   test -f "$home/.agents/skills/$skill/SKILL.md" || fail "agents $skill selector was not enabled"
 done
@@ -72,12 +73,12 @@ for skill in "${managed_skills[@]}" graph-search memory-graph-query; do
 done
 status="$(run_memoryctl status --json)"
 assert_contains "$status" '"status": "partial"'
-assert_contains "$status" '"duplicate_codex_skill_count": 8'
+assert_contains "$status" '"duplicate_codex_skill_count": 9'
 assert_contains "$status" '"active_retired_agent_skill_count": 1'
 status="$(run_memoryctl refresh --json)"
 assert_contains "$status" '"status": "enabled"'
 assert_contains "$status" '"duplicate_codex_skill_count": 0'
-assert_contains "$status" '"archived_duplicate_codex_skill_count": 8'
+assert_contains "$status" '"archived_duplicate_codex_skill_count": 9'
 assert_contains "$status" '"active_retired_agent_skill_count": 0'
 assert_contains "$status" '"archived_retired_agent_skill_count": 1'
 test ! -e "$home/.agents/skills/memory-graph-query" || fail "refresh left retired graph query selector active"
@@ -113,8 +114,10 @@ test ! -e "$prefix/bin/lark-memory-cli" || fail "active wrapper still exists aft
 test -x "$prefix/bin/.disabled/lark-memory-cli" || fail "disabled wrapper was not retained"
 test ! -e "$home/.agents/skills/lark-memory" || fail "agents memory skill still active after disable"
 test ! -e "$home/.agents/skills/memory-graph-search" || fail "agents graph search skill still active after disable"
+test ! -e "$home/.agents/skills/memory-writing-style" || fail "agents writing style skill still active after disable"
 test -f "$home/.agents/skills/.disabled/lark-memory/SKILL.md" || fail "agents memory skill was not disabled"
 test -f "$home/.agents/skills/.disabled/memory-graph-search/SKILL.md" || fail "agents graph search skill was not disabled"
+test -f "$home/.agents/skills/.disabled/memory-writing-style/SKILL.md" || fail "agents writing style skill was not disabled"
 
 rm -rf "$home/.agents/skills/.disabled/memory-graph-search"
 status="$(run_memoryctl refresh --json)"
@@ -130,8 +133,10 @@ assert_contains "$status" '"status": "skills_disabled"'
 test -x "$prefix/bin/lark-memory-cli" || fail "wrapper should stay active with --skills-only"
 test ! -e "$home/.agents/skills/lark-memory" || fail "agents memory skill still active after --skills-only"
 test ! -e "$home/.agents/skills/memory-graph-search" || fail "agents graph search skill still active after --skills-only"
+test ! -e "$home/.agents/skills/memory-writing-style" || fail "agents writing style skill still active after --skills-only"
 test -f "$home/.agents/skills/.disabled/lark-memory/SKILL.md" || fail "agents memory skill was not disabled by --skills-only"
 test -f "$home/.agents/skills/.disabled/memory-graph-search/SKILL.md" || fail "agents graph search skill was not disabled by --skills-only"
+test -f "$home/.agents/skills/.disabled/memory-writing-style/SKILL.md" || fail "agents writing style skill was not disabled by --skills-only"
 
 legacy_home="$tmp/legacy-home"
 mkdir -p "$legacy_home/.codex/skills/.disabled/lark-memory"
