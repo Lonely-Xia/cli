@@ -23,14 +23,18 @@ func callMemoryAPITypedWithContext(rctx *common.RuntimeContext, callCtx context.
 }
 
 func callMemoryAPITypedWithContextAndTTEnv(rctx *common.RuntimeContext, callCtx context.Context, method, apiPath string, body interface{}, ttEnv string) (map[string]interface{}, error) {
+	headers := memoryExtraHeaders()
+	if value := strings.TrimSpace(ttEnv); value != "" {
+		headers.Set("x-tt-env", value)
+	}
+	return callMemoryAPITypedWithContextAndHeaders(rctx, callCtx, method, apiPath, body, headers)
+}
+
+func callMemoryAPITypedWithContextAndHeaders(rctx *common.RuntimeContext, callCtx context.Context, method, apiPath string, body interface{}, headers http.Header) (map[string]interface{}, error) {
 	req := &larkcore.ApiReq{
 		HttpMethod: method,
 		ApiPath:    apiPath,
 		Body:       body,
-	}
-	headers := memoryExtraHeaders()
-	if value := strings.TrimSpace(ttEnv); value != "" {
-		headers.Set("x-tt-env", value)
 	}
 	resp, err := rctx.DoAPIWithHeadersContext(callCtx, req, headers)
 	if err != nil {
