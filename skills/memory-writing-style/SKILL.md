@@ -31,7 +31,8 @@ process; it does not change `destination-idc=lf`. Do not change the lane unless 
    records covering that period; writing-style Memory is not evidence of what happened during it. Explain any
    material evidence gap rather than inventing activity.
 3. Apply `跨场景稳定特征` to the organization and wording. Select a matching entry from `场景化写作模式` when one
-   exists; otherwise use the stable rules without forcing a scenario template.
+   exists; otherwise use the stable rules without forcing a scenario template. Before adopting a referenced
+   document's format for that scenario, read its complete representative blocks and inspect the real structure.
 4. Deliver in the form the user requested. Answer in chat unless the request asks to create or modify a document.
    Follow `ai_guidance.steps` and `ai_guidance.guardrails` for every query.
 
@@ -43,10 +44,11 @@ rewrite-as-new guidance; that guidance does not change the user's create or edit
 
 1. Determine whether the user asked for a new document or an edit to an existing one. For an edit, read the
    target and preserve unrelated content and structure. For a new document, gather the requested factual material.
-2. Use the stable and matching scenario rules to shape the document. When a same-type Memory reference would help
-   with format, select only the most relevant one from `source.doc`, resolve its token through
-   `references.documents`, and read complete representative blocks. Do not infer its format from the Memory
-   summary. If none fits, proceed with the user's requested structure and the applicable style rules.
+2. Use the stable and matching scenario rules to shape the document. If Memory provides relevant same-type
+   reference documents, select the most relevant one from `source.doc`, resolve its token through
+   `references.documents`, and **read complete representative blocks** to confirm the real block hierarchy.
+   Use it as the sole format template when the user has not specified a different template. Never infer format
+   from the Memory summary alone. If none fits, proceed with the user's requested structure and applicable rules.
 3. Apply the writing style to the actual document's organization, format, wording, and tone. Honor any explicit
    user template or existing structure that should remain. Leave unsupported facts empty.
 4. Create or edit exactly as requested, then read the result back and correct unsupported facts, style mismatches,

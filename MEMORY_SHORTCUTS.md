@@ -287,7 +287,7 @@ lark-memory-cli memory +writing-style --as user --format json
 
 - `writing_style`：标题、章节、子章节、规则和可选写作场景；
 - `references`：从每条规则来源汇总的文档、IM 和会议索引；
-- `ai_guidance`：通用 query 使用流程，以及创建或修改文档时的风格应用、参考模板读取和回读验证规则。
+- `ai_guidance`：通用 query 使用流程，以及创建或修改文档时的风格应用、同类型参考文档的实际 block 读取和回读验证规则；不能只根据 Memory 摘要推断格式。
 
 如需在其它泳道验证，可以仅对当前进程覆盖：
 

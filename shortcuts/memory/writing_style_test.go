@@ -128,13 +128,16 @@ func TestMemoryWritingStyleExecuteParsesPayload(t *testing.T) {
 		t.Fatalf("ai guidance guardrail count = %d, want at least 4; output=%s", count, got)
 	}
 	queryPrompt := gjson.Get(got, "data.ai_guidance.prompt_template").String()
-	for _, required := range []string{"{query}", "事实", "创建或修改文档"} {
+	for _, required := range []string{"{query}", "事实", "创建或修改文档", "完整代表性区块"} {
 		if !strings.Contains(queryPrompt, required) {
 			t.Fatalf("general query prompt missing %q: %s", required, queryPrompt)
 		}
 	}
 	if count := gjson.Get(got, "data.ai_guidance.document_steps.#").Int(); count < 5 {
 		t.Fatalf("document step count = %d, want at least 5; output=%s", count, got)
+	}
+	if step := gjson.Get(got, "data.ai_guidance.document_steps.1").String(); !strings.Contains(step, "必须") || !strings.Contains(step, "完整代表性区块") {
+		t.Fatalf("document reference step is not strict enough: %s", step)
 	}
 	if count := gjson.Get(got, "data.ai_guidance.document_guardrails.#").Int(); count < 4 {
 		t.Fatalf("document guardrail count = %d, want at least 4; output=%s", count, got)
